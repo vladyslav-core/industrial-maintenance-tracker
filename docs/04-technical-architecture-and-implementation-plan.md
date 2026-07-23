@@ -270,7 +270,7 @@ spring.jpa.hibernate.ddl-auto=validate
 
 Не используются:
 
-```properties
+```text
 spring.jpa.hibernate.ddl-auto=update
 spring.jpa.hibernate.ddl-auto=create
 spring.jpa.hibernate.ddl-auto=create-drop
