@@ -111,7 +111,7 @@ Spring Security настраивает доступ
 ## Backend
 
 - Java 21;
-- Spring Boot 3.5.x;
+- Spring Boot 4.1;
 - Spring MVC;
 - Spring Security;
 - Spring Data JPA;
