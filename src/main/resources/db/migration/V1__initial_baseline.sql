@@ -1,0 +1,2 @@
+-- Initial database baseline.
+-- Domain tables will be added in later migrations.
