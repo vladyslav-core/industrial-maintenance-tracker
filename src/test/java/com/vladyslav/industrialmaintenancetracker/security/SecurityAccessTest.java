@@ -5,26 +5,32 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
 
-
+import static org.hamcrest.Matchers.containsString;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestBuilders.formLogin;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestBuilders.logout;
+import static org.springframework.security.test.web.servlet.response.SecurityMockMvcResultMatchers.unauthenticated;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.forwardedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestBuilders.logout;
-import static org.hamcrest.Matchers.containsString;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestBuilders.formLogin;
-import static org.springframework.security.test.web.servlet.response.SecurityMockMvcResultMatchers.unauthenticated;
 
 
 @WebMvcTest({
         HomeController.class,
-        LoginController.class
+        LoginController.class,
+        AccessDeniedController.class
 })
-@Import(SecurityConfig.class)
+@Import({
+        SecurityConfig.class,
+        SecurityAccessTest.UserManagementTestController.class
+})
 class SecurityAccessTest {
 
     @Autowired
@@ -104,5 +110,67 @@ class SecurityAccessTest {
                 .andExpect(content().string(
                         containsString("Invalid email or password.")
                 ));
+    }
+
+    @Test
+    void shouldShowAccessDeniedPage() throws Exception {
+        mockMvc.perform(get("/access-denied"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("access-denied"))
+                .andExpect(content().string(
+                        containsString(
+                                "You do not have permission to access this page."
+                        )
+                ));
+    }
+
+    @Test
+    @WithMockUser(
+            username = "admin@example.com",
+            roles = "ADMIN"
+    )
+    void shouldAllowAdminToAccessUserManagement() throws Exception {
+        mockMvc.perform(get("/users"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("users"));
+    }
+
+    @Test
+    @WithMockUser(
+            username = "technician@example.com",
+            roles = "TECHNICIAN"
+    )
+    void shouldDenyTechnicianAccessToUserManagement() throws Exception {
+        mockMvc.perform(get("/users"))
+                .andExpect(status().isForbidden())
+                .andExpect(forwardedUrl("/access-denied"));
+    }
+
+    @Test
+    @WithMockUser(
+            username = "requester@example.com",
+            roles = "REQUESTER"
+    )
+    void shouldDenyRequesterAccessToUserManagement() throws Exception {
+        mockMvc.perform(get("/users"))
+                .andExpect(status().isForbidden())
+                .andExpect(forwardedUrl("/access-denied"));
+    }
+
+    @Test
+    void shouldRedirectAnonymousUserFromUserManagementToLogin()
+            throws Exception {
+        mockMvc.perform(get("/users"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/login"));
+    }
+
+    @RestController
+    static class UserManagementTestController {
+
+        @GetMapping("/users")
+        String users() {
+            return "users";
+        }
     }
 }

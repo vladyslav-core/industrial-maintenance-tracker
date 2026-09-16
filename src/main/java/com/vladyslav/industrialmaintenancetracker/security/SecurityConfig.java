@@ -24,13 +24,23 @@ public class SecurityConfig {
     ) throws Exception {
         http
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/login").permitAll()
+                        .requestMatchers(
+                                "/login",
+                                "/access-denied"
+                        ).permitAll()
+                        .requestMatchers(
+                                "/users",
+                                "/users/**"
+                        ).hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .formLogin(form -> form
                         .loginPage("/login")
                 )
-                .logout(withDefaults());
+                .logout(withDefaults())
+                .exceptionHandling(exception -> exception
+                        .accessDeniedPage("/access-denied")
+                );
 
         return http.build();
     }
