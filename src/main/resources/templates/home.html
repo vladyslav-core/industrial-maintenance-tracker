@@ -1,11 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8">
     <title>Industrial Maintenance Tracker</title>
 </head>
 <body>
 <h1>Industrial Maintenance Tracker</h1>
+
 <p>Application is running successfully.</p>
+
+<form th:action="@{/logout}" method="post">
+    <button type="submit">Sign out</button>
+</form>
 </body>
 </html>

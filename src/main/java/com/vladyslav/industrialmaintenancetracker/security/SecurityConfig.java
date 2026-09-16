@@ -24,9 +24,12 @@ public class SecurityConfig {
     ) throws Exception {
         http
                 .authorizeHttpRequests(authorize -> authorize
+                        .requestMatchers("/login").permitAll()
                         .anyRequest().authenticated()
                 )
-                .formLogin(withDefaults())
+                .formLogin(form -> form
+                        .loginPage("/login")
+                )
                 .logout(withDefaults());
 
         return http.build();
