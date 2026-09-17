@@ -14,6 +14,16 @@
         <a th:href="@{/users/new}">Create user</a>
     </p>
 
+    <p th:if="${successMessage}"
+       th:text="${successMessage}">
+        Operation completed successfully.
+    </p>
+
+    <p th:if="${errorMessage}"
+       th:text="${errorMessage}">
+        Operation failed.
+    </p>
+
     <p th:if="${#lists.isEmpty(users)}">
         No users found.
     </p>
@@ -26,19 +36,44 @@
             <th>Role</th>
             <th>Status</th>
             <th>Created</th>
+            <th>Actions</th>
         </tr>
         </thead>
 
         <tbody>
         <tr th:each="user : ${users}">
-            <td th:text="${user.fullName}">System Administrator</td>
-            <td th:text="${user.email}">admin@example.com</td>
-            <td th:text="${user.role}">ADMIN</td>
+            <td th:text="${user.fullName}">
+                System Administrator
+            </td>
+
+            <td th:text="${user.email}">
+                admin@example.com
+            </td>
+
+            <td th:text="${user.role}">
+                ADMIN
+            </td>
+
             <td th:text="${user.active ? 'Active' : 'Inactive'}">
                 Active
             </td>
+
             <td th:text="${user.createdAt}">
                 2026-09-17T09:00:00Z
+            </td>
+
+            <td>
+                <form th:if="${user.active}"
+                      th:action="@{/users/{id}/deactivate(id=${user.id})}"
+                      method="post">
+                    <button type="submit">Deactivate</button>
+                </form>
+
+                <form th:unless="${user.active}"
+                      th:action="@{/users/{id}/activate(id=${user.id})}"
+                      method="post">
+                    <button type="submit">Activate</button>
+                </form>
             </td>
         </tr>
         </tbody>

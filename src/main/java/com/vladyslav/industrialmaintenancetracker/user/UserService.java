@@ -1,6 +1,8 @@
 package com.vladyslav.industrialmaintenancetracker.user;
 
 import com.vladyslav.industrialmaintenancetracker.exception.DuplicateEmailException;
+import com.vladyslav.industrialmaintenancetracker.exception.LastActiveAdminException;
+import com.vladyslav.industrialmaintenancetracker.exception.UserNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.user.dto.UserCreateForm;
 import com.vladyslav.industrialmaintenancetracker.user.dto.UserListItem;
 import org.springframework.data.domain.Sort;
@@ -63,5 +65,40 @@ public class UserService {
                         user.getCreatedAt()
                 ))
                 .toList();
+    }
+
+    @Transactional
+    public void activateUser(Long userId) {
+        User user = findUser(userId);
+
+        user.activate();
+    }
+
+    @Transactional
+    public void deactivateUser(Long userId) {
+        User user = findUser(userId);
+
+        if (!user.isActive()) {
+            return;
+        }
+
+        boolean isLastActiveAdmin =
+                user.getRole() == Role.ADMIN
+                        && userRepository.countByRoleAndActiveTrue(
+                        Role.ADMIN
+                ) <= 1;
+
+        if (isLastActiveAdmin) {
+            throw new LastActiveAdminException();
+        }
+
+        user.deactivate();
+    }
+
+    private User findUser(Long userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(
+                        () -> new UserNotFoundException(userId)
+                );
     }
 }

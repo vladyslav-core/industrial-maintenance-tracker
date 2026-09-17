@@ -56,6 +56,14 @@ public class User {
         this.active = true;
     }
 
+    public void activate() {
+        this.active = true;
+    }
+
+    public void deactivate() {
+        this.active = false;
+    }
+
     public Long getId() {
         return id;
     }
