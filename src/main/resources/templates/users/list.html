@@ -10,6 +10,8 @@
 
     <p>
         <a th:href="@{/}">Back to home</a>
+        |
+        <a th:href="@{/users/new}">Create user</a>
     </p>
 
     <p th:if="${#lists.isEmpty(users)}">

@@ -1,8 +1,10 @@
 package com.vladyslav.industrialmaintenancetracker.security;
 
 import com.vladyslav.industrialmaintenancetracker.common.controller.HomeController;
+import com.vladyslav.industrialmaintenancetracker.user.Role;
 import com.vladyslav.industrialmaintenancetracker.user.UserController;
 import com.vladyslav.industrialmaintenancetracker.user.UserService;
+import com.vladyslav.industrialmaintenancetracker.user.dto.UserListItem;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -10,11 +12,9 @@ import org.springframework.context.annotation.Import;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import com.vladyslav.industrialmaintenancetracker.user.Role;
-import com.vladyslav.industrialmaintenancetracker.user.dto.UserListItem;
 
-import java.util.List;
 import java.time.Instant;
+import java.util.List;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.Mockito.verify;
@@ -130,6 +130,36 @@ class SecurityAccessTest {
                         containsString(
                                 "You do not have permission to access this page."
                         )
+                ));
+    }
+
+    @Test
+    @WithMockUser(
+            username = "admin@example.com",
+            roles = "ADMIN"
+    )
+    void shouldShowCreateUserFormToAdmin() throws Exception {
+        mockMvc.perform(get("/users/new"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("users/create"))
+                .andExpect(model().attributeExists(
+                        "userCreateForm",
+                        "roles"
+                ))
+                .andExpect(content().string(
+                        containsString("name=\"fullName\"")
+                ))
+                .andExpect(content().string(
+                        containsString("name=\"email\"")
+                ))
+                .andExpect(content().string(
+                        containsString("name=\"password\"")
+                ))
+                .andExpect(content().string(
+                        containsString("name=\"role\"")
+                ))
+                .andExpect(content().string(
+                        containsString("name=\"_csrf\"")
                 ));
     }
 

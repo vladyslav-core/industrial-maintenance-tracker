@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Create user | Industrial Maintenance Tracker</title>
+</head>
+<body>
+<main>
+    <h1>Create user</h1>
+
+    <p>
+        <a th:href="@{/users}">Back to users</a>
+    </p>
+
+    <form th:action="@{/users}"
+          th:object="${userCreateForm}"
+          method="post">
+
+        <p>
+            <label for="fullName">Full name</label><br>
+            <input id="fullName"
+                   type="text"
+                   th:field="*{fullName}"
+                   minlength="2"
+                   maxlength="100"
+                   required>
+            <br>
+            <span th:if="${#fields.hasErrors('fullName')}"
+                  th:errors="*{fullName}">
+                Full name error
+            </span>
+        </p>
+
+        <p>
+            <label for="email">Email</label><br>
+            <input id="email"
+                   type="email"
+                   th:field="*{email}"
+                   maxlength="254"
+                   required>
+            <br>
+            <span th:if="${#fields.hasErrors('email')}"
+                  th:errors="*{email}">
+                Email error
+            </span>
+        </p>
+
+        <p>
+            <label for="password">Password</label><br>
+            <input id="password"
+                   type="password"
+                   th:field="*{password}"
+                   minlength="8"
+                   autocomplete="new-password"
+                   required>
+            <br>
+            <span th:if="${#fields.hasErrors('password')}"
+                  th:errors="*{password}">
+                Password error
+            </span>
+        </p>
+
+        <p>
+            <label for="role">Role</label><br>
+            <select id="role"
+                    th:field="*{role}"
+                    required>
+                <option value="">Select role</option>
+                <option th:each="role : ${roles}"
+                        th:value="${role}"
+                        th:text="${role}">
+                    ADMIN
+                </option>
+            </select>
+            <br>
+            <span th:if="${#fields.hasErrors('role')}"
+                  th:errors="*{role}">
+                Role error
+            </span>
+        </p>
+
+        <button type="submit">Create user</button>
+    </form>
+</main>
+</body>
+</html>
