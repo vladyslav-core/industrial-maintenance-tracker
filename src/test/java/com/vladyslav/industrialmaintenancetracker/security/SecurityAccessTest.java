@@ -1,40 +1,49 @@
 package com.vladyslav.industrialmaintenancetracker.security;
 
 import com.vladyslav.industrialmaintenancetracker.common.controller.HomeController;
+import com.vladyslav.industrialmaintenancetracker.user.UserController;
+import com.vladyslav.industrialmaintenancetracker.user.UserService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RestController;
+import com.vladyslav.industrialmaintenancetracker.user.Role;
+import com.vladyslav.industrialmaintenancetracker.user.dto.UserListItem;
+
+import java.util.List;
+import java.time.Instant;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestBuilders.formLogin;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestBuilders.logout;
 import static org.springframework.security.test.web.servlet.response.SecurityMockMvcResultMatchers.unauthenticated;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.forwardedUrl;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.model;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
 
-
 @WebMvcTest({
         HomeController.class,
         LoginController.class,
-        AccessDeniedController.class
+        AccessDeniedController.class,
+        UserController.class
 })
-@Import({
-        SecurityConfig.class,
-        SecurityAccessTest.UserManagementTestController.class
-})
+@Import(SecurityConfig.class)
 class SecurityAccessTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @MockitoBean
+    private UserService userService;
 
     @Test
     void shouldRedirectAnonymousUserToLogin() throws Exception {
@@ -130,9 +139,74 @@ class SecurityAccessTest {
             roles = "ADMIN"
     )
     void shouldAllowAdminToAccessUserManagement() throws Exception {
+        when(userService.getAllUsers()).thenReturn(List.of());
+
         mockMvc.perform(get("/users"))
                 .andExpect(status().isOk())
-                .andExpect(content().string("users"));
+                .andExpect(view().name("users/list"))
+                .andExpect(model().attributeExists("users"))
+                .andExpect(content().string(
+                        containsString("No users found.")
+                ));
+
+        verify(userService).getAllUsers();
+    }
+
+    @Test
+    @WithMockUser(
+            username = "admin@example.com",
+            roles = "ADMIN"
+    )
+    void shouldRenderUsersForAdmin() throws Exception {
+        UserListItem administrator = new UserListItem(
+                1L,
+                "System Administrator",
+                "admin@example.com",
+                Role.ADMIN,
+                true,
+                Instant.parse("2026-09-17T07:00:00Z")
+        );
+
+        UserListItem technician = new UserListItem(
+                2L,
+                "Inactive Technician",
+                "technician@example.com",
+                Role.TECHNICIAN,
+                false,
+                Instant.parse("2026-09-16T07:00:00Z")
+        );
+
+        List<UserListItem> users = List.of(
+                administrator,
+                technician
+        );
+
+        when(userService.getAllUsers()).thenReturn(users);
+
+        mockMvc.perform(get("/users"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("users/list"))
+                .andExpect(model().attribute("users", users))
+                .andExpect(content().string(
+                        containsString("System Administrator")
+                ))
+                .andExpect(content().string(
+                        containsString("admin@example.com")
+                ))
+                .andExpect(content().string(
+                        containsString("ADMIN")
+                ))
+                .andExpect(content().string(
+                        containsString("Active")
+                ))
+                .andExpect(content().string(
+                        containsString("Inactive Technician")
+                ))
+                .andExpect(content().string(
+                        containsString("Inactive")
+                ));
+
+        verify(userService).getAllUsers();
     }
 
     @Test
@@ -163,14 +237,5 @@ class SecurityAccessTest {
         mockMvc.perform(get("/users"))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(redirectedUrl("/login"));
-    }
-
-    @RestController
-    static class UserManagementTestController {
-
-        @GetMapping("/users")
-        String users() {
-            return "users";
-        }
     }
 }

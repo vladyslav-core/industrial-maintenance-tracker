@@ -2,10 +2,13 @@ package com.vladyslav.industrialmaintenancetracker.user;
 
 import com.vladyslav.industrialmaintenancetracker.exception.DuplicateEmailException;
 import com.vladyslav.industrialmaintenancetracker.user.dto.UserCreateForm;
+import com.vladyslav.industrialmaintenancetracker.user.dto.UserListItem;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Locale;
 
 @Service
@@ -43,5 +46,22 @@ public class UserService {
         );
 
         return userRepository.save(user);
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserListItem> getAllUsers() {
+        Sort sort = Sort.by(Sort.Direction.ASC, "fullName");
+
+        return userRepository.findAll(sort)
+                .stream()
+                .map(user -> new UserListItem(
+                        user.getId(),
+                        user.getFullName(),
+                        user.getEmail(),
+                        user.getRole(),
+                        user.isActive(),
+                        user.getCreatedAt()
+                ))
+                .toList();
     }
 }
