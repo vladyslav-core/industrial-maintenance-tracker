@@ -63,6 +63,10 @@
             </td>
 
             <td>
+                <a th:href="@{/users/{id}/edit(id=${user.id})}">
+                    Edit
+                </a>
+
                 <form th:if="${user.active}"
                       th:action="@{/users/{id}/deactivate(id=${user.id})}"
                       method="post">

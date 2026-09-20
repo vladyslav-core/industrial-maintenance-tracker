@@ -56,6 +56,16 @@ public class User {
         this.active = true;
     }
 
+    public void updateProfile(
+            String fullName,
+            String email,
+            Role role
+    ) {
+        this.fullName = fullName;
+        this.email = email;
+        this.role = role;
+    }
+
     public void activate() {
         this.active = true;
     }

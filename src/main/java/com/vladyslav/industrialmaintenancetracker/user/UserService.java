@@ -5,6 +5,7 @@ import com.vladyslav.industrialmaintenancetracker.exception.LastActiveAdminExcep
 import com.vladyslav.industrialmaintenancetracker.exception.UserNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.user.dto.UserCreateForm;
 import com.vladyslav.industrialmaintenancetracker.user.dto.UserListItem;
+import com.vladyslav.industrialmaintenancetracker.user.dto.UserEditForm;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -65,6 +66,58 @@ public class UserService {
                         user.getCreatedAt()
                 ))
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public UserEditForm getUserForEditing(Long userId) {
+        User user = findUser(userId);
+
+        return new UserEditForm(
+                user.getFullName(),
+                user.getEmail(),
+                user.getRole()
+        );
+    }
+
+    @Transactional
+    public void updateUser(
+            Long userId,
+            UserEditForm form
+    ) {
+        User user = findUser(userId);
+
+        String fullName = form.getFullName().trim();
+        String email = form.getEmail()
+                .trim()
+                .toLowerCase(Locale.ROOT);
+
+        boolean emailChanged =
+                !user.getEmail().equalsIgnoreCase(email);
+
+        if (
+                emailChanged
+                        && userRepository.existsByEmailIgnoreCase(email)
+        ) {
+            throw new DuplicateEmailException(email);
+        }
+
+        boolean removesLastActiveAdminRole =
+                user.isActive()
+                        && user.getRole() == Role.ADMIN
+                        && form.getRole() != Role.ADMIN
+                        && userRepository.countByRoleAndActiveTrue(
+                        Role.ADMIN
+                ) <= 1;
+
+        if (removesLastActiveAdminRole) {
+            throw new LastActiveAdminException();
+        }
+
+        user.updateProfile(
+                fullName,
+                email,
+                form.getRole()
+        );
     }
 
     @Transactional
