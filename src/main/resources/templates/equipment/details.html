@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Equipment details | Industrial Maintenance Tracker</title>
+</head>
+<body>
+<main>
+    <h1 th:text="${equipment.name}">
+        Hydraulic press
+    </h1>
+
+    <p>
+        <a th:href="@{/equipment}">Back to equipment</a>
+
+        <span th:if="${canManageEquipment}">
+            |
+            <a th:href="@{/equipment/{id}/edit(id=${equipment.id})}">
+                Edit
+            </a>
+        </span>
+    </p>
+
+    <p th:if="${successMessage}"
+       th:text="${successMessage}">
+        Operation completed successfully.
+    </p>
+
+    <p th:if="${errorMessage}"
+       th:text="${errorMessage}">
+        Operation failed.
+    </p>
+
+    <dl>
+        <dt>Inventory number</dt>
+        <dd th:text="${equipment.inventoryNumber}">
+            PRESS-001
+        </dd>
+
+        <dt>Description</dt>
+        <dd th:text="${equipment.description != null
+                ? equipment.description
+                : 'No description'}">
+            Main production press
+        </dd>
+
+        <dt>Location</dt>
+        <dd th:text="${equipment.location}">
+            Workshop A
+        </dd>
+
+        <dt>Status</dt>
+        <dd th:text="${equipment.status}">
+            OPERATIONAL
+        </dd>
+
+        <dt>Created</dt>
+        <dd th:text="${equipment.createdAt}">
+            2026-09-21T10:00:00Z
+        </dd>
+
+        <dt>Last updated</dt>
+        <dd th:text="${equipment.updatedAt}">
+            2026-09-21T11:00:00Z
+        </dd>
+    </dl>
+
+    <section th:if="${canManageEquipment
+            and equipment.status.name() != 'DECOMMISSIONED'}">
+        <h2>Change status</h2>
+
+        <form
+                th:action="@{/equipment/{id}/status(id=${equipment.id})}"
+                method="post">
+
+            <label for="status">New status</label>
+
+            <select id="status" name="status" required>
+                <option value="">Select status</option>
+                <option
+                        th:each="equipmentStatus : ${statuses}"
+                        th:if="${equipmentStatus != equipment.status}"
+                        th:value="${equipmentStatus}"
+                        th:text="${equipmentStatus}">
+                    UNDER_REPAIR
+                </option>
+            </select>
+
+            <button type="submit">Change status</button>
+        </form>
+    </section>
+
+    <p th:if="${canManageEquipment
+            and equipment.status.name() == 'DECOMMISSIONED'}">
+        Decommissioned equipment cannot be returned to service.
+    </p>
+</main>
+</body>
+</html>

@@ -2,6 +2,7 @@ package com.vladyslav.industrialmaintenancetracker.security;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -32,6 +33,20 @@ public class SecurityConfig {
                                 "/users",
                                 "/users/**"
                         ).hasRole("ADMIN")
+                        .requestMatchers(
+                                "/equipment/new",
+                                "/equipment/*/edit"
+                        ).hasRole("ADMIN")
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/equipment",
+                                "/equipment/**"
+                        ).hasRole("ADMIN")
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/equipment",
+                                "/equipment/*"
+                        ).authenticated()
                         .anyRequest().authenticated()
                 )
                 .formLogin(form -> form

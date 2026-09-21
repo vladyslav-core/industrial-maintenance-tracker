@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Add equipment | Industrial Maintenance Tracker</title>
+</head>
+<body>
+<main>
+    <h1>Add equipment</h1>
+
+    <p>
+        <a th:href="@{/equipment}">Back to equipment</a>
+    </p>
+
+    <form th:action="@{/equipment}"
+          th:object="${equipmentCreateForm}"
+          method="post">
+
+        <p>
+            <label for="name">Name</label><br>
+            <input
+                    id="name"
+                    type="text"
+                    th:field="*{name}"
+                    minlength="2"
+                    maxlength="120"
+                    required
+            >
+            <br>
+            <span
+                    th:if="${#fields.hasErrors('name')}"
+                    th:errors="*{name}">
+                Name error
+            </span>
+        </p>
+
+        <p>
+            <label for="inventoryNumber">
+                Inventory number
+            </label><br>
+            <input
+                    id="inventoryNumber"
+                    type="text"
+                    th:field="*{inventoryNumber}"
+                    minlength="2"
+                    maxlength="50"
+                    required
+            >
+            <br>
+            <span
+                    th:if="${#fields.hasErrors('inventoryNumber')}"
+                    th:errors="*{inventoryNumber}">
+                Inventory number error
+            </span>
+        </p>
+
+        <p>
+            <label for="description">Description</label><br>
+            <textarea
+                    id="description"
+                    th:field="*{description}"
+                    maxlength="1000"
+                    rows="6"
+                    cols="50">
+            </textarea>
+            <br>
+            <span
+                    th:if="${#fields.hasErrors('description')}"
+                    th:errors="*{description}">
+                Description error
+            </span>
+        </p>
+
+        <p>
+            <label for="location">Location</label><br>
+            <input
+                    id="location"
+                    type="text"
+                    th:field="*{location}"
+                    minlength="2"
+                    maxlength="120"
+                    required
+            >
+            <br>
+            <span
+                    th:if="${#fields.hasErrors('location')}"
+                    th:errors="*{location}">
+                Location error
+            </span>
+        </p>
+
+        <button type="submit">Add equipment</button>
+    </form>
+</main>
+</body>
+</html>

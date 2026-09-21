@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Equipment | Industrial Maintenance Tracker</title>
+</head>
+<body>
+<main>
+    <h1>Equipment</h1>
+
+    <p>
+        <a th:href="@{/}">Back to home</a>
+
+        <span th:if="${canManageEquipment}">
+            |
+            <a th:href="@{/equipment/new}">
+                Add equipment
+            </a>
+        </span>
+    </p>
+
+    <p th:if="${successMessage}"
+       th:text="${successMessage}">
+        Operation completed successfully.
+    </p>
+
+    <p th:if="${errorMessage}"
+       th:text="${errorMessage}">
+        Operation failed.
+    </p>
+
+    <form th:action="@{/equipment}" method="get">
+        <label for="search">Search</label>
+        <input
+                id="search"
+                name="search"
+                type="text"
+                th:value="${search}"
+                placeholder="Name or inventory number"
+        >
+
+        <label for="status">Status</label>
+        <select id="status" name="status">
+            <option value="">All statuses</option>
+            <option
+                    th:each="equipmentStatus : ${statuses}"
+                    th:value="${equipmentStatus}"
+                    th:text="${equipmentStatus}"
+                    th:selected="${equipmentStatus == selectedStatus}">
+                OPERATIONAL
+            </option>
+        </select>
+
+        <button type="submit">Apply</button>
+        <a th:href="@{/equipment}">Clear</a>
+    </form>
+
+    <p th:if="${#lists.isEmpty(equipment)}">
+        No equipment found.
+    </p>
+
+    <table th:if="${not #lists.isEmpty(equipment)}">
+        <thead>
+        <tr>
+            <th>Name</th>
+            <th>Inventory number</th>
+            <th>Location</th>
+            <th>Status</th>
+            <th>Actions</th>
+        </tr>
+        </thead>
+
+        <tbody>
+        <tr th:each="item : ${equipment}">
+            <td th:text="${item.name}">
+                Hydraulic press
+            </td>
+
+            <td th:text="${item.inventoryNumber}">
+                PRESS-001
+            </td>
+
+            <td th:text="${item.location}">
+                Workshop A
+            </td>
+
+            <td th:text="${item.status}">
+                OPERATIONAL
+            </td>
+
+            <td>
+                <a th:href="@{/equipment/{id}(id=${item.id})}">
+                    View
+                </a>
+
+                <span th:if="${canManageEquipment}">
+                    |
+                    <a th:href="@{/equipment/{id}/edit(id=${item.id})}">
+                        Edit
+                    </a>
+                </span>
+            </td>
+        </tr>
+        </tbody>
+    </table>
+</main>
+</body>
+</html>
