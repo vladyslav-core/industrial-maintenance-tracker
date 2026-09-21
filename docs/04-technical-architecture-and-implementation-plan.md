@@ -1123,10 +1123,11 @@ feat: add shared Thymeleaf layout and navigation
 
 ### Domain и persistence
 
-- EquipmentStatus;
-- Equipment;
+- `EquipmentStatus`;
+- `Equipment`;
 - Flyway-миграция;
-- EquipmentRepository.
+- `EquipmentRepository`;
+- Repository-тесты на PostgreSQL.
 
 ```text
 feat: add equipment domain and persistence
@@ -1134,12 +1135,14 @@ feat: add equipment domain and persistence
 
 ### Просмотр
 
-- EquipmentService;
-- EquipmentController;
-- список;
-- детали;
-- 404;
-- права.
+- `EquipmentService`;
+- `EquipmentController`;
+- список оборудования;
+- карточка оборудования;
+- поиск по названию или инвентарному номеру;
+- фильтрация по статусу;
+- обработка отсутствующего оборудования;
+- доступ для всех авторизованных ролей.
 
 ```text
 feat: add equipment list and details
@@ -1147,11 +1150,14 @@ feat: add equipment list and details
 
 ### Создание
 
-- EquipmentCreateForm;
+- `EquipmentCreateForm`;
 - GET формы;
-- POST;
-- валидация;
-- уникальность.
+- POST создания;
+- Bean Validation;
+- нормализация данных;
+- проверка уникальности инвентарного номера;
+- автоматический начальный статус `OPERATIONAL`;
+- доступ только для `ADMIN`.
 
 ```text
 feat: add equipment creation
@@ -1159,10 +1165,13 @@ feat: add equipment creation
 
 ### Редактирование и статус
 
+- `EquipmentEditForm`;
 - редактирование разрешённых полей;
-- активация;
-- деактивация;
-- ADMIN-only.
+- отдельная операция изменения статуса;
+- проверка разрешённых переходов;
+- окончательный статус `DECOMMISSIONED`;
+- отсутствие физического удаления;
+- доступ только для `ADMIN`.
 
 ```text
 feat: add equipment editing and status management
@@ -1924,15 +1933,21 @@ TestRepairRequestFactory
 Готово:
 
 - создание;
-- просмотр;
-- редактирование;
-- деактивация;
+- просмотр списка и карточки;
+- поиск и фильтрация;
+- редактирование основных данных;
+- управление статусом;
 - валидация;
-- права.
+- проверка уникальности;
+- разграничение доступа.
 
 Проверка:
 
-- ADMIN управляет оборудованием.
+- все авторизованные роли просматривают оборудование;
+- `ADMIN` создаёт, редактирует и изменяет статус;
+- `TECHNICIAN` и `REQUESTER` не могут изменять оборудование;
+- запрещённые переходы статуса блокируются;
+- `DECOMMISSIONED` нельзя вернуть в эксплуатацию.
 
 ## D — RepairRequest
 
