@@ -10,7 +10,9 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import com.vladyslav.industrialmaintenancetracker.exception.InvalidEquipmentStatusTransitionException;
 
+import java.util.Objects;
 import java.time.Instant;
 
 @Entity
@@ -73,8 +75,23 @@ public class Equipment {
         this.location = location;
     }
 
-    public void changeStatus(EquipmentStatus status) {
-        this.status = status;
+    public void changeStatus(EquipmentStatus targetStatus) {
+        Objects.requireNonNull(
+                targetStatus,
+                "Equipment status must not be null"
+        );
+
+        if (
+                status == EquipmentStatus.DECOMMISSIONED
+                        && targetStatus != EquipmentStatus.DECOMMISSIONED
+        ) {
+            throw new InvalidEquipmentStatusTransitionException(
+                    status,
+                    targetStatus
+            );
+        }
+
+        this.status = targetStatus;
     }
 
     public Long getId() {
