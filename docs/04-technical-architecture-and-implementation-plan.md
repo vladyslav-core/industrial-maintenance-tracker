@@ -305,7 +305,7 @@ com.vladyslav.industrialmaintenancetracker
 │
 ├── user
 │   ├── User
-│   ├── UserRole
+│   ├── Role
 │   ├── UserRepository
 │   ├── UserService
 │   ├── UserController
@@ -431,7 +431,6 @@ Repository отвечает за:
 - проверку существования;
 - фильтрацию;
 - сортировку;
-- пагинацию;
 - специальные запросы.
 
 Repository не проверяет роли, переходы статусов и бизнес-разрешения.
@@ -531,8 +530,12 @@ UserEditForm
 EquipmentCreateForm
 EquipmentEditForm
 RepairRequestCreateForm
+RepairRequestEditForm
 RepairRequestAssignForm
+RepairRequestPriorityForm
+RepairRequestResolutionForm
 RepairRequestCompleteForm
+RepairRequestCancellationForm
 RepairRequestFilter
 ```
 
@@ -580,7 +583,7 @@ MapStruct не используется. Маппинг выполняется �
 
 Выполняется в Service:
 
-- оборудование активно;
+- оборудование существует и не списано;
 - пользователь существует;
 - техник активен;
 - роль корректна;
@@ -606,7 +609,7 @@ Authorization:
 
 Используются:
 
-- вход по username и password;
+- вход по email и паролю;
 - собственная страница login;
 - серверная HTTP-сессия;
 - session cookie;
@@ -639,7 +642,7 @@ CustomUserDetails
 создание HTTP-сессии
 ```
 
-Основной идентификатор входа — `username`. Email остаётся контактным полем.
+Идентификатор входа — `User.email`. В `CustomUserDetails` метод `getUsername()` возвращает email; отдельного поля `username` в таблице пользователей нет.
 
 ## 8.2 Роли
 
@@ -661,15 +664,15 @@ ROLE_REQUESTER
 
 ### ADMIN
 
-Может управлять пользователями и оборудованием, видеть все заявки, назначать техников, контролировать жизненный цикл и просматривать историю.
+Может управлять пользователями и оборудованием, создавать собственные и видеть все заявки, назначать техников, менять приоритет, отменять, возвращать работу на доработку, закрывать и просматривать историю. Не начинает и не завершает ремонт вместо техника.
 
 ### TECHNICIAN
 
-Может видеть назначенные заявки, начинать работу, фиксировать результат, завершать разрешённые этапы и просматривать историю.
+Может создавать заявки, видеть назначенные ему и созданные им заявки, редактировать и отменять собственную `NEW`, начинать назначенную работу, фиксировать результат, переводить её в `COMPLETED` и просматривать историю оборудования.
 
 ### REQUESTER
 
-Может создавать заявки, видеть собственные заявки, отслеживать статус и отменять свою заявку, если это разрешено.
+Может создавать заявки, видеть собственные заявки, редактировать и отменять собственную `NEW`, отслеживать статус и просматривать историю оборудования.
 
 Точные действия и переходы должны полностью соответствовать документу `03-data-model-and-business-rules.md`.
 
@@ -692,27 +695,9 @@ Service проверяет:
 
 ## 8.4 Текущий пользователь
 
-Используется отдельный компонент:
+Уже существующий `CustomUserDetails` хранит `userId` и email. При обработке действия сервис получает текущий `userId`, загружает `User` и проверяет актуальные роль и активность.
 
-```text
-CurrentUserService
-```
-
-Схема:
-
-```text
-Service
-        ↓
-CurrentUserService
-        ↓
-SecurityContext
-        ↓
-username
-        ↓
-UserRepository
-        ↓
-User
-```
+Небольшой `CurrentUserService` допустим как адаптер к `SecurityContext`, если он устраняет дублирование. Дополнительную иерархию компонентов ради одной проверки не создаём.
 
 ## 8.5 Пароли и начальный ADMIN
 
@@ -724,6 +709,8 @@ User
 APP_ADMIN_USERNAME
 APP_ADMIN_PASSWORD
 ```
+
+`APP_ADMIN_USERNAME` — имя существующей переменной окружения; её значение является адресом email администратора. Переименовывать переменную при работе над заявками не требуется.
 
 Открытый пароль не хранится в базе, Entity, миграциях, GitHub или `application.properties`.
 
@@ -944,19 +931,17 @@ Thymeleaf
 # 12. Общая последовательность реализации
 
 1. технический каркас;
-2. User и вход;
+2. User, вход и управление пользователями;
 3. Equipment;
-4. создание и просмотр RepairRequest;
-5. назначение TECHNICIAN;
-6. полный жизненный цикл RepairRequest;
-7. автоматическое создание MaintenanceRecord;
-8. история обслуживания;
-9. управление пользователями;
-10. dashboard;
-11. фильтрация и пагинация;
-12. обработка ошибок;
-13. финальная проверка бизнес-правил и безопасности;
-14. CI, контейнеризация и README.
+4. модель RepairRequest и миграция;
+5. создание, просмотр, редактирование автором, поиск и фильтры;
+6. назначение, переназначение, снятие назначения и изменение приоритета;
+7. начало работы, заполнение результата и завершение техником;
+8. возврат на доработку, закрытие с MaintenanceRecord и отмена;
+9. защита оборудования и техника с незакрытыми заявками;
+10. отдельные страницы истории обслуживания;
+11. ролевая сводка, обработка ошибок и итоговая проверка безопасности;
+12. CI, контейнеризация и README.
 
 ---
 
@@ -1065,7 +1050,7 @@ feat: add basic Thymeleaf home page
 
 Порядок:
 
-1. `UserRole`;
+1. `Role`;
 2. `User`;
 3. миграция таблицы users;
 4. `UserRepository`;
@@ -1179,21 +1164,19 @@ feat: add equipment editing and status management
 
 ## 13.9 RepairRequest: создание и просмотр
 
+Этап 08 охватывает заявки от `NEW` до `CLOSED` или `CANCELLED`, запись результата и создание `MaintenanceRecord` при закрытии. Общая страница истории, dashboard, пагинация и журнал событий относятся к другим этапам или не входят в MVP.
+
 ### Domain и persistence
 
-- RepairRequestStatus;
-- RepairRequestPriority;
-- RepairRequest;
-- Flyway-миграция;
-- RepairRequestRepository.
+- `RepairRequestStatus` (`NEW`, `ASSIGNED`, `IN_PROGRESS`, `COMPLETED`, `CLOSED`, `CANCELLED`);
+- `RepairRequestPriority` (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`);
+- `RepairRequest` и связи с `Equipment`, автором `User` и текущим назначенным `User`;
+- Flyway `V4__create_repair_requests_table.sql`;
+- `RepairRequestRepository` с запросами, которые ограничивают видимость по роли.
 
-Связи:
+В `RepairRequest` хранятся `title`, `description`, `priority`, `status`, `resolution`, `cancellationReason`, `createdAt`, `updatedAt`, `assignedAt`, `startedAt`, `completedAt` и `closedAt`. Отдельного номера заявки, копии местоположения, даты обнаружения и журнала событий нет. Номер в интерфейсе равен `id`.
 
-```text
-RepairRequest → Equipment
-RepairRequest → createdBy User
-RepairRequest → assignedTechnician User
-```
+Миграция закрепляет внешние ключи, допустимые значения enum, длины и обязательность полей. Бизнес-переходы проверяет Service. `closedAt` используется для `CLOSED` и `CANCELLED`.
 
 ```text
 feat: add repair request domain and persistence
@@ -1201,39 +1184,68 @@ feat: add repair request domain and persistence
 
 ### Создание
 
-- RepairRequestCreateForm;
-- createRequest;
-- GET формы;
-- POST;
-- начальный статус и служебные поля задаются приложением.
+- `RepairRequestCreateForm` с оборудованием, заголовком, описанием и приоритетом;
+- `MEDIUM` по умолчанию;
+- `createdBy` и `NEW` устанавливает сервер;
+- оборудование `DECOMMISSIONED` отклоняется;
+- все три роли могут создавать заявки.
 
 ```text
 feat: add repair request creation
 ```
 
-### Список и детали
+### Список, детали и редактирование автором
 
-- список;
-- детали;
-- видимость по ролям;
-- доступ к конкретной заявке.
+- поиск по `id`, заголовку и описанию;
+- фильтры по статусу, приоритету, оборудованию и назначенному технику; по автору — для ADMIN;
+- сортировка по `createdAt` и `id`;
+- ADMIN видит все заявки, TECHNICIAN — назначенные ему или созданные им, REQUESTER — только созданные им;
+- проверка права на карточку и действие на сервере;
+- автор любой роли может изменить только `title` и `description` собственной `NEW` до назначения.
 
 ```text
 feat: add repair request list and details
+feat: add repair request editing and filters
 ```
 
-## 13.10 Назначение техника
+### Страницы и маршруты этапа 08
 
-Создать отдельную операцию:
+| Метод и маршрут | Назначение |
+|---|---|
+| `GET /repair-requests` | Список с поиском и фильтрами по доступным заявкам |
+| `GET /repair-requests/new` | Форма создания для всех ролей |
+| `POST /repair-requests` | Создать заявку |
+| `GET /repair-requests/{id}` | Карточка с действиями по роли и статусу |
+| `GET /repair-requests/{id}/edit` | Форма редактирования автором своей `NEW` |
+| `POST /repair-requests/{id}/edit` | Изменить `title` и `description` |
+| `POST /repair-requests/{id}/assign` | ADMIN назначает или переназначает техника |
+| `POST /repair-requests/{id}/unassign` | ADMIN снимает назначение в `ASSIGNED` |
+| `POST /repair-requests/{id}/priority` | ADMIN меняет приоритет активной заявки |
+| `POST /repair-requests/{id}/start` | Назначенный техник начинает работу |
+| `GET /repair-requests/{id}/complete` | Форма результата для назначенного техника |
+| `POST /repair-requests/{id}/resolution` | Сохранить черновик результата в `IN_PROGRESS` |
+| `POST /repair-requests/{id}/complete` | Завершить работу с обязательным результатом |
+| `POST /repair-requests/{id}/return` | ADMIN возвращает `COMPLETED` на доработку |
+| `POST /repair-requests/{id}/close` | ADMIN принимает результат и создаёт запись истории |
+| `POST /repair-requests/{id}/cancel` | ADMIN либо автор `NEW` отменяет с причиной |
+
+Формы работают через MVC и Thymeleaf с CSRF. Универсального маршрута для произвольного изменения статуса и ручного управления `MaintenanceRecord` нет. Страницы истории обслуживания реализуются позже.
+
+## 13.10 Назначение, приоритет и снятие назначения
+
+Создать отдельные операции:
 
 ```text
 assignTechnician(...)
+unassignTechnician(...)
+changePriority(...)
 ```
 
-Проверить право ADMIN, статус заявки, существование, активность и роль TECHNICIAN.
+Проверить право ADMIN, состояние заявки, существование, активность и роль техника. Первое назначение: `NEW → ASSIGNED`. Снятие назначения: только `ASSIGNED → NEW`. Переназначение в `ASSIGNED` или `IN_PROGRESS` сохраняет статус и обновляет текущего техника и `assignedAt`. Приоритет меняется только в `NEW`, `ASSIGNED` или `IN_PROGRESS`. При назначении и изменении роли/активности согласованно блокировать строку `User`, чтобы техника нельзя было одновременно назначить и деактивировать.
 
 ```text
-feat: add technician assignment
+feat: add technician assignment and reassignment
+feat: add priority updates
 ```
 
 ## 13.11 Начало работы
@@ -1245,24 +1257,25 @@ startWork(...)
 POST /repair-requests/{id}/start
 ```
 
-Проверить, что текущий TECHNICIAN активен и заявка назначена именно ему.
+Проверить, что текущий TECHNICIAN активен, заявка в `ASSIGNED` и назначена именно ему. `startedAt` фиксирует первое начало работы.
 
 ```text
 feat: add repair request work start
 ```
 
-## 13.12 Завершение ремонта
+## 13.12 Результат, завершение и возврат на доработку
 
 Создать:
 
+- сохранение черновика `resolution` назначенным техником в `IN_PROGRESS`;
 - RepairRequestCompleteForm;
-- completeRepair;
-- форму результата;
-- проверки обязательных данных;
-- переход, определённый документом 03.
+- переход `IN_PROGRESS → COMPLETED` только с заполненным `resolution`;
+- возврат `COMPLETED → IN_PROGRESS` только ADMIN;
+- при возврате очищать `completedAt`, сохранять `resolution` для исправления.
 
 ```text
-feat: add repair completion workflow
+feat: add repair result and completion workflow
+feat: allow completed requests to return to work
 ```
 
 ## 13.13 Закрытие и MaintenanceRecord
@@ -1270,7 +1283,7 @@ feat: add repair completion workflow
 Создать:
 
 - MaintenanceRecord;
-- миграцию;
+- Flyway `V5__create_maintenance_records_table.sql` с уникальным `repair_request_id`;
 - MaintenanceRecordRepository;
 - closeRequest.
 
@@ -1285,11 +1298,13 @@ feat: add repair completion workflow
 7. создаёт MaintenanceRecord;
 8. сохраняет всё атомарно.
 
+`MaintenanceRecord` копирует оборудование, текущего техника, `resolution` и `completedAt` из заявки. Одна запись на одну заявку; повторное закрытие запрещено. UI истории в этот шаг не входит.
+
 ```text
 feat: close repair requests with maintenance record
 ```
 
-## 13.14 Отмена
+## 13.14 Отмена и межмодульные ограничения
 
 Создать:
 
@@ -1297,24 +1312,28 @@ feat: close repair requests with maintenance record
 cancelRequest(...)
 ```
 
-Не использовать универсальный `changeStatus`.
+Автор любой роли отменяет собственную `NEW` до назначения; ADMIN может отменять `NEW`, `ASSIGNED` и `IN_PROGRESS`. Причина обязательна; у `CANCELLED` устанавливается `closedAt`, запись истории не создаётся. `COMPLETED` отменить нельзя.
+
+Перед списанием оборудования проверять отсутствие заявок `NEW`, `ASSIGNED`, `IN_PROGRESS`, `COMPLETED`. Перед деактивацией техника либо сменой его роли проверять отсутствие назначенных ему `ASSIGNED`, `IN_PROGRESS`, `COMPLETED`. Создание заявки и списание оборудования должны согласованно блокировать строку `Equipment`, чтобы одновременные операции не нарушали правило.
+
+Не использовать универсальный `changeStatus`. Существующие сервисы `EquipmentService` и `UserService` расширяются только нужными проверками.
 
 ```text
 feat: add repair request cancellation
+feat: protect equipment and technician with open requests
 ```
 
 ## 13.15 История обслуживания
 
-Создать:
+Отдельный следующий шаг после этапа 08:
 
 - MaintenanceRecordService;
 - MaintenanceRecordController;
-- список;
-- детали;
-- историю Equipment;
-- переход к исходной заявке.
+- общую страницу для ADMIN и TECHNICIAN;
+- историю в карточке Equipment для всех ролей;
+- переход к исходной заявке только при наличии прав на её просмотр.
 
-Не создавать ручное создание, редактирование и удаление.
+В `COMPLETED` записи истории ещё нет. Не создавать ручное создание, редактирование и удаление.
 
 ```text
 feat: add maintenance history views
@@ -1323,71 +1342,37 @@ feat: add maintenance history views
 
 ## 13.16 Управление пользователями
 
-ADMIN должен иметь возможность:
-
-- просматривать пользователей;
-- создавать пользователя;
-- задавать роль;
-- изменять разрешённые данные;
-- деактивировать;
-- задавать новый временный пароль.
-
-Проверить:
-
-- уникальность username;
-- хеширование пароля;
-- корректность роли;
-- защиту последнего активного ADMIN либо явно зафиксировать ограничение.
-
-Примерные коммиты:
-
-```text
-feat: add user management views
-feat: add user creation and editing
-feat: add user activation management
-```
+Раздел пользователей уже реализован на этапе 06. В этапе 08 к нему добавляется лишь запрет деактивации и изменения роли техника с назначенными незакрытыми заявками (раздел 13.14).
 
 ## 13.17 Dashboard
 
-Dashboard создаётся после появления реальных данных.
+Ролевая сводка дополняется после реализации заявок; она не является обязательной частью этапа 08.
 
 ### ADMIN
 
 - новые заявки;
-- неназначенные;
+- назначенные;
 - в работе;
-- завершённые, ожидающие закрытия.
+- завершённые, ожидающие закрытия;
+- критические незакрытые заявки.
 
 ### TECHNICIAN
 
 - назначенные мне;
-- в работе;
-- недавно завершённые.
+- в работе.
 
 ### REQUESTER
 
-- мои открытые;
-- последние изменения;
+- последние мои заявки и статусы;
 - создание новой заявки.
 
 ```text
 feat: add role-based dashboard
 ```
 
-## 13.18 Фильтрация и пагинация
+## 13.18 Поиск и фильтрация
 
-Добавить:
-
-- статус;
-- приоритет;
-- техника;
-- оборудование;
-- сортировку;
-- пагинацию.
-
-```text
-feat: add repair request filtering and pagination
-```
+Поиск и фильтры, необходимые для списка заявок, входят в этап 08 (раздел 13.9). Пагинация в текущий MVP не входит. Видимость каждой строки ограничивается на уровне запроса к базе данных до применения поиска и фильтров.
 
 ## 13.19 Обработка ошибок
 
@@ -1641,8 +1626,8 @@ H2 не используется.
 Проверяются:
 
 - кастомные запросы;
-- поиск по username;
-- уникальность username;
+- поиск по email без учёта регистра;
+- уникальность email без учёта регистра;
 - уникальность inventory number;
 - заявки пользователя;
 - заявки техника;
