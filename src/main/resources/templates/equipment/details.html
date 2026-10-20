@@ -65,6 +65,12 @@
         </dd>
     </dl>
 
+    <p th:if="${equipment.status.name() != 'DECOMMISSIONED'}">
+        <a th:href="@{/repair-requests/new(equipmentId=${equipment.id})}">
+            Report a problem with this equipment
+        </a>
+    </p>
+
     <section th:if="${canManageEquipment
             and equipment.status.name() != 'DECOMMISSIONED'}">
         <h2>Change status</h2>

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>New repair request | Industrial Maintenance Tracker</title>
+</head>
+<body>
+<main>
+    <h1>New repair request</h1>
+    <p><a th:href="@{/equipment}">Back to equipment</a></p>
+
+    <form th:action="@{/repair-requests}"
+          th:object="${repairRequestCreateForm}"
+          method="post">
+        <p>
+            <label for="equipmentId">Equipment</label><br>
+            <select id="equipmentId" th:field="*{equipmentId}" required>
+                <option value="">Select equipment</option>
+                <option th:each="item : ${equipmentOptions}"
+                        th:value="${item.id}"
+                        th:text="${item.name + ' (' + item.inventoryNumber + ')'}">
+                    Hydraulic press (PRESS-001)
+                </option>
+            </select><br>
+            <span th:if="${#fields.hasErrors('equipmentId')}"
+                  th:errors="*{equipmentId}">Equipment error</span>
+        </p>
+        <p>
+            <label for="title">Problem title</label><br>
+            <input id="title" type="text" th:field="*{title}"
+                   minlength="5" maxlength="150" required><br>
+            <span th:if="${#fields.hasErrors('title')}"
+                  th:errors="*{title}">Title error</span>
+        </p>
+        <p>
+            <label for="description">Description</label><br>
+            <textarea id="description" th:field="*{description}"
+                      minlength="10" maxlength="3000" rows="7" cols="60"
+                      required></textarea><br>
+            <span th:if="${#fields.hasErrors('description')}"
+                  th:errors="*{description}">Description error</span>
+        </p>
+        <p>
+            <label for="priority">Priority</label><br>
+            <select id="priority" th:field="*{priority}">
+                <option value="">MEDIUM (default)</option>
+                <option th:each="item : ${priorities}"
+                        th:value="${item}" th:text="${item}">HIGH</option>
+            </select>
+        </p>
+        <button type="submit">Create request</button>
+    </form>
+</main>
+</body>
+</html>
