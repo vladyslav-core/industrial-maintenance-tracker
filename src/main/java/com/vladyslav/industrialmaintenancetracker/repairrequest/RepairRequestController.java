@@ -4,6 +4,8 @@ import com.vladyslav.industrialmaintenancetracker.exception.EquipmentNotAvailabl
 import com.vladyslav.industrialmaintenancetracker.exception.EquipmentNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.exception.RepairRequestNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.exception.RepairRequestEditConflictException;
+import com.vladyslav.industrialmaintenancetracker.exception.InvalidRepairRequestActionException;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestDetails;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestCreateForm;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestEditForm;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestFilters;
@@ -56,8 +58,60 @@ public class RepairRequestController {
             @AuthenticationPrincipal CustomUserDetails currentUser,
             Model model
     ) {
-        model.addAttribute("request", requestService.getDetails(requestId, currentUser.getUserId()));
+        RepairRequestDetails request = requestService.getDetails(requestId, currentUser.getUserId());
+        model.addAttribute("request", request);
+        if (request.canManage()) {
+            model.addAttribute("technicianOptions", requestService.availableTechnicians(currentUser.getUserId()));
+            model.addAttribute("priorities", RepairRequestPriority.values());
+        }
         return "repair-requests/details";
+    }
+
+    @PostMapping("/{requestId}/assign")
+    public String assign(
+            @PathVariable Long requestId,
+            @RequestParam Long technicianId,
+            @AuthenticationPrincipal CustomUserDetails currentUser,
+            RedirectAttributes redirectAttributes
+    ) {
+        try {
+            requestService.assign(requestId, technicianId, currentUser.getUserId());
+            redirectAttributes.addFlashAttribute("successMessage", "Technician assignment updated.");
+        } catch (InvalidRepairRequestActionException exception) {
+            redirectAttributes.addFlashAttribute("errorMessage", exception.getMessage());
+        }
+        return "redirect:/repair-requests/" + requestId;
+    }
+
+    @PostMapping("/{requestId}/unassign")
+    public String unassign(
+            @PathVariable Long requestId,
+            @AuthenticationPrincipal CustomUserDetails currentUser,
+            RedirectAttributes redirectAttributes
+    ) {
+        try {
+            requestService.unassign(requestId, currentUser.getUserId());
+            redirectAttributes.addFlashAttribute("successMessage", "Assignment removed. Request is NEW again.");
+        } catch (InvalidRepairRequestActionException exception) {
+            redirectAttributes.addFlashAttribute("errorMessage", exception.getMessage());
+        }
+        return "redirect:/repair-requests/" + requestId;
+    }
+
+    @PostMapping("/{requestId}/priority")
+    public String changePriority(
+            @PathVariable Long requestId,
+            @RequestParam RepairRequestPriority priority,
+            @AuthenticationPrincipal CustomUserDetails currentUser,
+            RedirectAttributes redirectAttributes
+    ) {
+        try {
+            requestService.changePriority(requestId, priority, currentUser.getUserId());
+            redirectAttributes.addFlashAttribute("successMessage", "Priority updated.");
+        } catch (InvalidRepairRequestActionException exception) {
+            redirectAttributes.addFlashAttribute("errorMessage", exception.getMessage());
+        }
+        return "redirect:/repair-requests/" + requestId;
     }
 
     @GetMapping("/{requestId}/edit")

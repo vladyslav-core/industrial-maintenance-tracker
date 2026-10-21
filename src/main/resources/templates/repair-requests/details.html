@@ -43,6 +43,32 @@
         <dt th:text="${request.status.name() == 'CANCELLED' ? 'Cancelled' : 'Closed'}"></dt>
         <dd th:text="${request.closedAt}"></dd>
     </dl>
+    <section th:if="${request.canManage}">
+        <h2>Assignment and priority</h2>
+        <form th:if="${not #lists.isEmpty(technicianOptions)}" method="post"
+              th:action="@{/repair-requests/{id}/assign(id=${request.id})}">
+            <label for="technicianId">Active technician</label>
+            <select id="technicianId" name="technicianId" required>
+                <option value="">Select a technician</option>
+                <option th:each="option : ${technicianOptions}" th:value="${option.id}"
+                        th:text="${option.fullName + ' (' + option.email + ')'}"></option>
+            </select>
+            <button type="submit" th:text="${request.status.name() == 'NEW' ? 'Assign technician' : 'Reassign technician'}"></button>
+        </form>
+        <p th:if="${#lists.isEmpty(technicianOptions)}">No active technicians are available.</p>
+        <form th:if="${request.canUnassign}" method="post"
+              th:action="@{/repair-requests/{id}/unassign(id=${request.id})}">
+            <button type="submit">Remove assignment</button>
+        </form>
+        <form method="post" th:action="@{/repair-requests/{id}/priority(id=${request.id})}">
+            <label for="priority">Priority</label>
+            <select id="priority" name="priority" required>
+                <option th:each="value : ${priorities}" th:value="${value}" th:text="${value}"
+                        th:selected="${value == request.priority}"></option>
+            </select>
+            <button type="submit">Update priority</button>
+        </form>
+    </section>
     <section>
         <h2>Problem description</h2>
         <p style="white-space: pre-wrap" th:text="${request.description}"></p>

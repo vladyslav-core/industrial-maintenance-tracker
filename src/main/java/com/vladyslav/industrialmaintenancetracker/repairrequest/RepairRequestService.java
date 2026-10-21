@@ -7,6 +7,8 @@ import com.vladyslav.industrialmaintenancetracker.exception.EquipmentNotAvailabl
 import com.vladyslav.industrialmaintenancetracker.exception.EquipmentNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.exception.RepairRequestNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.exception.RepairRequestEditConflictException;
+import com.vladyslav.industrialmaintenancetracker.exception.InvalidRepairRequestActionException;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestTechnicianOption;
 import com.vladyslav.industrialmaintenancetracker.exception.UserNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestCreateForm;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestDetails;
@@ -84,7 +86,9 @@ public class RepairRequestService {
                 request.getResolution(), request.getCancellationReason(),
                 request.getCreatedAt(), request.getUpdatedAt(), request.getAssignedAt(),
                 request.getStartedAt(), request.getCompletedAt(), request.getClosedAt(),
-                canEdit(request, viewer)
+                canEdit(request, viewer),
+                viewer.getRole() == Role.ADMIN && manageable(request),
+                viewer.getRole() == Role.ADMIN && request.getStatus() == RepairRequestStatus.ASSIGNED
         );
     }
 
@@ -172,6 +176,57 @@ public class RepairRequestService {
                 form.getPriority()
         );
         return requestRepository.save(request);
+    }
+
+    @Transactional(readOnly = true)
+    public List<RepairRequestTechnicianOption> availableTechnicians(Long administratorId) {
+        activeAdmin(administratorId);
+        return userRepository.findByRoleAndActiveTrueOrderByFullNameAscIdAsc(Role.TECHNICIAN).stream()
+                .map(user -> new RepairRequestTechnicianOption(user.getId(), user.getFullName(), user.getEmail()))
+                .toList();
+    }
+
+    @Transactional
+    public void assign(Long requestId, Long technicianId, Long administratorId) {
+        activeAdmin(administratorId);
+        if (technicianId == null) {
+            throw new InvalidRepairRequestActionException("Select an active technician.");
+        }
+        // Lock the technician before the request; account restrictions will share this lock in step 12.
+        User technician = userRepository.findByIdForUpdate(technicianId)
+                .orElseThrow(() -> new InvalidRepairRequestActionException("Select an active technician."));
+        lockedRequest(requestId).assignTo(technician, Instant.now());
+    }
+
+    @Transactional
+    public void unassign(Long requestId, Long administratorId) {
+        activeAdmin(administratorId);
+        lockedRequest(requestId).unassign();
+    }
+
+    @Transactional
+    public void changePriority(Long requestId, RepairRequestPriority priority, Long administratorId) {
+        activeAdmin(administratorId);
+        lockedRequest(requestId).changePriority(priority);
+    }
+
+    private User activeAdmin(Long administratorId) {
+        User administrator = activeViewer(administratorId);
+        if (administrator.getRole() != Role.ADMIN) {
+            throw new AccessDeniedException("Only an administrator can manage assignments and priority");
+        }
+        return administrator;
+    }
+
+    private RepairRequest lockedRequest(Long requestId) {
+        return requestRepository.findByIdForUpdate(requestId)
+                .orElseThrow(() -> new RepairRequestNotFoundException(requestId));
+    }
+
+    private boolean manageable(RepairRequest request) {
+        return request.getStatus() == RepairRequestStatus.NEW
+                || request.getStatus() == RepairRequestStatus.ASSIGNED
+                || request.getStatus() == RepairRequestStatus.IN_PROGRESS;
     }
 
     private RepairRequest visibleRequest(Long requestId, User viewer) {

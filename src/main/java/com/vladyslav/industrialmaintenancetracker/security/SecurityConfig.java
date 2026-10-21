@@ -47,6 +47,12 @@ public class SecurityConfig {
                                 "/equipment",
                                 "/equipment/*"
                         ).authenticated()
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/repair-requests/*/assign",
+                                "/repair-requests/*/unassign",
+                                "/repair-requests/*/priority"
+                        ).hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .formLogin(form -> form

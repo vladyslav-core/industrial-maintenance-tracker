@@ -2,6 +2,8 @@ package com.vladyslav.industrialmaintenancetracker.repairrequest;
 
 import com.vladyslav.industrialmaintenancetracker.equipment.Equipment;
 import com.vladyslav.industrialmaintenancetracker.user.User;
+import com.vladyslav.industrialmaintenancetracker.user.Role;
+import com.vladyslav.industrialmaintenancetracker.exception.InvalidRepairRequestActionException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -95,6 +97,48 @@ public class RepairRequest {
         this.createdBy = Objects.requireNonNull(createdBy, "Author must not be null");
         this.priority = priority == null ? RepairRequestPriority.MEDIUM : priority;
         this.status = RepairRequestStatus.NEW;
+    }
+
+    public void assignTo(User technician, Instant assignedAt) {
+        requireManageable();
+        if (technician == null || !technician.isActive() || technician.getRole() != Role.TECHNICIAN) {
+            throw new InvalidRepairRequestActionException("Select an active technician.");
+        }
+        if (assignedTechnician != null && assignedTechnician.getId().equals(technician.getId())) {
+            throw new InvalidRepairRequestActionException("This technician is already assigned to the request.");
+        }
+        Objects.requireNonNull(assignedAt, "Assignment time must not be null");
+        this.assignedTechnician = technician;
+        this.assignedAt = assignedAt;
+        if (status == RepairRequestStatus.NEW) {
+            status = RepairRequestStatus.ASSIGNED;
+        }
+    }
+
+    public void unassign() {
+        if (status != RepairRequestStatus.ASSIGNED) {
+            throw new InvalidRepairRequestActionException("Assignment can only be removed before work starts.");
+        }
+        assignedTechnician = null;
+        assignedAt = null;
+        status = RepairRequestStatus.NEW;
+    }
+
+    public void changePriority(RepairRequestPriority priority) {
+        requireManageable();
+        if (priority == null) {
+            throw new InvalidRepairRequestActionException("Select a priority.");
+        }
+        this.priority = priority;
+    }
+
+    private void requireManageable() {
+        if (status != RepairRequestStatus.NEW && status != RepairRequestStatus.ASSIGNED
+                && status != RepairRequestStatus.IN_PROGRESS) {
+            throw new InvalidRepairRequestActionException(
+                    "Assignment and priority can only be changed for NEW, ASSIGNED or IN_PROGRESS requests."
+            );
+        }
     }
 
     public Long getId() {
