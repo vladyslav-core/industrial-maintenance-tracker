@@ -84,6 +84,14 @@
         <h2>Repair result</h2>
         <p style="white-space: pre-wrap" th:text="${request.resolution}"></p>
     </section>
+    <section th:if="${request.canReturn}">
+        <h2>Result review</h2>
+        <p>Return the repair to the assigned technician if the result needs correction.</p>
+        <form method="post" th:action="@{/repair-requests/{id}/return(id=${request.id})}">
+            <input type="hidden" name="updatedAt" th:value="${request.updatedAt}">
+            <button type="submit">Return for rework</button>
+        </form>
+    </section>
     <section th:if="${request.status.name() == 'CANCELLED'}">
         <h2>Cancellation reason</h2>
         <p style="white-space: pre-wrap" th:text="${request.cancellationReason}"></p>

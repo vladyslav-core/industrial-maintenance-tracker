@@ -51,7 +51,8 @@ public class SecurityConfig {
                                 HttpMethod.POST,
                                 "/repair-requests/*/assign",
                                 "/repair-requests/*/unassign",
-                                "/repair-requests/*/priority"
+                                "/repair-requests/*/priority",
+                                "/repair-requests/*/return"
                         ).hasRole("ADMIN")
                         .requestMatchers(
                                 HttpMethod.GET,

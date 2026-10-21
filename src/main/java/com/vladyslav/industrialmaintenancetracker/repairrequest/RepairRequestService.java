@@ -92,7 +92,8 @@ public class RepairRequestService {
                 viewer.getRole() == Role.ADMIN && manageable(request),
                 viewer.getRole() == Role.ADMIN && request.getStatus() == RepairRequestStatus.ASSIGNED,
                 isAssignedTechnician(request, viewer) && request.getStatus() == RepairRequestStatus.ASSIGNED,
-                isAssignedTechnician(request, viewer) && request.getStatus() == RepairRequestStatus.IN_PROGRESS
+                isAssignedTechnician(request, viewer) && request.getStatus() == RepairRequestStatus.IN_PROGRESS,
+                viewer.getRole() == Role.ADMIN && request.getStatus() == RepairRequestStatus.COMPLETED
         );
     }
 
@@ -212,6 +213,18 @@ public class RepairRequestService {
     public void changePriority(Long requestId, RepairRequestPriority priority, Long administratorId) {
         activeAdmin(administratorId);
         lockedRequest(requestId).changePriority(priority);
+    }
+
+    @Transactional
+    public void returnForRework(Long requestId, Instant expectedUpdatedAt, Long administratorId) {
+        activeAdmin(administratorId);
+        RepairRequest request = lockedRequest(requestId);
+        if (expectedUpdatedAt == null || !Objects.equals(request.getUpdatedAt(), expectedUpdatedAt)) {
+            throw new InvalidRepairRequestActionException(
+                    "The repair result has changed. Reload the request before returning it for rework."
+            );
+        }
+        request.returnForRework();
     }
 
     @Transactional

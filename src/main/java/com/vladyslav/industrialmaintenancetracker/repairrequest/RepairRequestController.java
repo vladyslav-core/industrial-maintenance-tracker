@@ -15,6 +15,8 @@ import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairReques
 import jakarta.servlet.http.HttpServletResponse;
 import com.vladyslav.industrialmaintenancetracker.security.CustomUserDetails;
 import jakarta.validation.Valid;
+
+import java.time.Instant;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
@@ -110,6 +112,22 @@ public class RepairRequestController {
         try {
             requestService.changePriority(requestId, priority, currentUser.getUserId());
             redirectAttributes.addFlashAttribute("successMessage", "Priority updated.");
+        } catch (InvalidRepairRequestActionException exception) {
+            redirectAttributes.addFlashAttribute("errorMessage", exception.getMessage());
+        }
+        return "redirect:/repair-requests/" + requestId;
+    }
+
+    @PostMapping("/{requestId}/return")
+    public String returnForRework(
+            @PathVariable Long requestId,
+            @RequestParam Instant updatedAt,
+            @AuthenticationPrincipal CustomUserDetails currentUser,
+            RedirectAttributes redirectAttributes
+    ) {
+        try {
+            requestService.returnForRework(requestId, updatedAt, currentUser.getUserId());
+            redirectAttributes.addFlashAttribute("successMessage", "Repair returned to the technician for rework.");
         } catch (InvalidRepairRequestActionException exception) {
             redirectAttributes.addFlashAttribute("errorMessage", exception.getMessage());
         }

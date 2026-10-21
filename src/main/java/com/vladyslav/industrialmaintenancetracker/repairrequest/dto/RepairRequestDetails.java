@@ -29,6 +29,7 @@ public record RepairRequestDetails(
         boolean canManage,
         boolean canUnassign,
         boolean canStart,
-        boolean canWork
+        boolean canWork,
+        boolean canReturn
 ) {
 }

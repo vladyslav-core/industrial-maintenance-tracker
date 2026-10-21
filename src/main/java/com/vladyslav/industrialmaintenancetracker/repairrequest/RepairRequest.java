@@ -160,6 +160,14 @@ public class RepairRequest {
         status = RepairRequestStatus.COMPLETED;
     }
 
+    public void returnForRework() {
+        if (status != RepairRequestStatus.COMPLETED) {
+            throw new InvalidRepairRequestActionException("Only a COMPLETED repair can be returned for rework.");
+        }
+        completedAt = null;
+        status = RepairRequestStatus.IN_PROGRESS;
+    }
+
     private void requireInProgress() {
         if (status != RepairRequestStatus.IN_PROGRESS) {
             throw new InvalidRepairRequestActionException("Repair results can only be changed while work is IN_PROGRESS.");
