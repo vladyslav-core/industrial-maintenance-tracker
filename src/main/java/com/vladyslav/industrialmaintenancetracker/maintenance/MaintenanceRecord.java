@@ -59,7 +59,8 @@ public class MaintenanceRecord {
         }
 
         String result = Objects.requireNonNull(request.getResolution(), "Result must not be null");
-        if (result.isBlank() || !result.equals(result.strip())) {
+        // Match RepairRequest's trimming rule, including already stored results.
+        if (result.isBlank() || !result.equals(result.trim())) {
             throw new IllegalArgumentException("Result must be nonblank and trimmed");
         }
 

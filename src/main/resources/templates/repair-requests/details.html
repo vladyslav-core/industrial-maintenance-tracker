@@ -84,10 +84,15 @@
         <h2>Repair result</h2>
         <p style="white-space: pre-wrap" th:text="${request.resolution}"></p>
     </section>
-    <section th:if="${request.canReturn}">
+    <section th:if="${request.canReturn or request.canClose}">
         <h2>Result review</h2>
-        <p>Return the repair to the assigned technician if the result needs correction.</p>
-        <form method="post" th:action="@{/repair-requests/{id}/return(id=${request.id})}">
+        <p>Accept the repair result to close the request, or return it to the technician for correction.</p>
+        <form th:if="${request.canClose}" method="post"
+              th:action="@{/repair-requests/{id}/close(id=${request.id})}">
+            <input type="hidden" name="updatedAt" th:value="${request.updatedAt}">
+            <button type="submit">Accept result and close</button>
+        </form>
+        <form th:if="${request.canReturn}" method="post" th:action="@{/repair-requests/{id}/return(id=${request.id})}">
             <input type="hidden" name="updatedAt" th:value="${request.updatedAt}">
             <button type="submit">Return for rework</button>
         </form>

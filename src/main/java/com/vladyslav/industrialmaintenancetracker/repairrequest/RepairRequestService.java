@@ -25,6 +25,8 @@ import com.vladyslav.industrialmaintenancetracker.user.User;
 import com.vladyslav.industrialmaintenancetracker.user.UserRepository;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import com.vladyslav.industrialmaintenancetracker.maintenance.MaintenanceRecord;
+import com.vladyslav.industrialmaintenancetracker.maintenance.MaintenanceRecordRepository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -41,15 +43,18 @@ public class RepairRequestService {
     private final RepairRequestRepository requestRepository;
     private final EquipmentRepository equipmentRepository;
     private final UserRepository userRepository;
+    private final MaintenanceRecordRepository maintenanceRepository;
 
     public RepairRequestService(
             RepairRequestRepository requestRepository,
             EquipmentRepository equipmentRepository,
-            UserRepository userRepository
+            UserRepository userRepository,
+            MaintenanceRecordRepository maintenanceRepository
     ) {
         this.requestRepository = requestRepository;
         this.equipmentRepository = equipmentRepository;
         this.userRepository = userRepository;
+        this.maintenanceRepository = maintenanceRepository;
     }
 
     @Transactional(readOnly = true)
@@ -93,6 +98,7 @@ public class RepairRequestService {
                 viewer.getRole() == Role.ADMIN && request.getStatus() == RepairRequestStatus.ASSIGNED,
                 isAssignedTechnician(request, viewer) && request.getStatus() == RepairRequestStatus.ASSIGNED,
                 isAssignedTechnician(request, viewer) && request.getStatus() == RepairRequestStatus.IN_PROGRESS,
+                viewer.getRole() == Role.ADMIN && request.getStatus() == RepairRequestStatus.COMPLETED,
                 viewer.getRole() == Role.ADMIN && request.getStatus() == RepairRequestStatus.COMPLETED
         );
     }
@@ -213,6 +219,24 @@ public class RepairRequestService {
     public void changePriority(Long requestId, RepairRequestPriority priority, Long administratorId) {
         activeAdmin(administratorId);
         lockedRequest(requestId).changePriority(priority);
+    }
+
+    @Transactional
+    public void closeRequest(Long requestId, Instant expectedUpdatedAt, Long administratorId) {
+        activeAdmin(administratorId);
+        RepairRequest request = lockedRequest(requestId);
+        if (request.getStatus() == RepairRequestStatus.CLOSED) {
+            return;
+        }
+        if (expectedUpdatedAt == null || !Objects.equals(request.getUpdatedAt(), expectedUpdatedAt)) {
+            throw new InvalidRepairRequestActionException(
+                    "The repair result has changed. Reload the request before accepting it."
+            );
+        }
+        request.close(Instant.now());
+        // Both writes belong to this transaction. A failed history insert rolls back closure as well.
+        requestRepository.flush();
+        maintenanceRepository.saveAndFlush(new MaintenanceRecord(request));
     }
 
     @Transactional

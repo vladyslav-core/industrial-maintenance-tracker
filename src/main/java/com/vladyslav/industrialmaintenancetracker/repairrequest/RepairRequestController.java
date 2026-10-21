@@ -18,6 +18,9 @@ import jakarta.validation.Valid;
 
 import java.time.Instant;
 import org.springframework.http.HttpStatus;
+import org.springframework.dao.DataAccessException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -35,6 +38,8 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 @Controller
 @RequestMapping("/repair-requests")
 public class RepairRequestController {
+
+    private static final Logger log = LoggerFactory.getLogger(RepairRequestController.class);
 
     private final RepairRequestService requestService;
 
@@ -114,6 +119,26 @@ public class RepairRequestController {
             redirectAttributes.addFlashAttribute("successMessage", "Priority updated.");
         } catch (InvalidRepairRequestActionException exception) {
             redirectAttributes.addFlashAttribute("errorMessage", exception.getMessage());
+        }
+        return "redirect:/repair-requests/" + requestId;
+    }
+
+    @PostMapping("/{requestId}/close")
+    public String closeRequest(
+            @PathVariable Long requestId,
+            @RequestParam Instant updatedAt,
+            @AuthenticationPrincipal CustomUserDetails currentUser,
+            RedirectAttributes redirectAttributes
+    ) {
+        try {
+            requestService.closeRequest(requestId, updatedAt, currentUser.getUserId());
+            redirectAttributes.addFlashAttribute("successMessage", "Repair closed and recorded in maintenance history.");
+        } catch (InvalidRepairRequestActionException exception) {
+            redirectAttributes.addFlashAttribute("errorMessage", exception.getMessage());
+        } catch (DataAccessException exception) {
+            log.error("Could not confirm closure of repair request {}", requestId, exception);
+            redirectAttributes.addFlashAttribute("errorMessage",
+                    "Could not confirm closure. Reload the request before trying again.");
         }
         return "redirect:/repair-requests/" + requestId;
     }

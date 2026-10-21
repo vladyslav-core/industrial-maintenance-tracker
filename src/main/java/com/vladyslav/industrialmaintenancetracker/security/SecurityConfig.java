@@ -52,7 +52,8 @@ public class SecurityConfig {
                                 "/repair-requests/*/assign",
                                 "/repair-requests/*/unassign",
                                 "/repair-requests/*/priority",
-                                "/repair-requests/*/return"
+                                "/repair-requests/*/return",
+                                "/repair-requests/*/close"
                         ).hasRole("ADMIN")
                         .requestMatchers(
                                 HttpMethod.GET,

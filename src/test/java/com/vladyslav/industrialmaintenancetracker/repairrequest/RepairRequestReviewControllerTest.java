@@ -146,7 +146,7 @@ class RepairRequestReviewControllerTest {
                 1L, "Press", "PRESS-001", "Workshop A", "Author", "Technician",
                 RepairRequestPriority.HIGH, state, "Seal replaced. Pressure test passed.", null,
                 VERSION, VERSION, VERSION, VERSION, VERSION, null,
-                false, false, false, false, false, canReturn);
+                false, false, false, false, false, canReturn, false);
     }
 
     private RequestPostProcessor currentUser(Role role) {

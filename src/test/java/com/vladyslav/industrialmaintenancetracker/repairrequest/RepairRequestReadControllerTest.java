@@ -141,7 +141,7 @@ class RepairRequestReadControllerTest {
                 73L, "Oil leak in press", description,
                 7L, "Hydraulic press", "PRESS-001", "Workshop A", "Test User", null,
                 RepairRequestPriority.MEDIUM, RepairRequestStatus.NEW, null, null,
-                createdAt, createdAt, null, null, null, null, true, false, false, false, false, false
+                createdAt, createdAt, null, null, null, null, true, false, false, false, false, false, false
         );
     }
 

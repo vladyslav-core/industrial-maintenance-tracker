@@ -160,6 +160,14 @@ public class RepairRequest {
         status = RepairRequestStatus.COMPLETED;
     }
 
+    public void close(Instant closedAt) {
+        if (status != RepairRequestStatus.COMPLETED) {
+            throw new InvalidRepairRequestActionException("Only a COMPLETED repair can be closed.");
+        }
+        this.closedAt = Objects.requireNonNull(closedAt, "Closure time must not be null");
+        status = RepairRequestStatus.CLOSED;
+    }
+
     public void returnForRework() {
         if (status != RepairRequestStatus.COMPLETED) {
             throw new InvalidRepairRequestActionException("Only a COMPLETED repair can be returned for rework.");
