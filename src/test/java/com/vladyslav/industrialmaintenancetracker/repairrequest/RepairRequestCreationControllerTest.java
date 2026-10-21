@@ -70,7 +70,7 @@ class RepairRequestCreationControllerTest {
                         .param("description", "Hydraulic oil leaking around the seal")
                         .param("createdById", "99"))
                 .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("/equipment/7"));
+                .andExpect(redirectedUrl("/repair-requests/73"));
 
         verify(requestService).create(any(RepairRequestCreateForm.class), eq(42L));
     }

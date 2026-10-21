@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Repair request | Industrial Maintenance Tracker</title>
+</head>
+<body>
+<main>
+    <h1 th:text="${'Request #' + request.id}">Request #123</h1>
+    <h2 th:text="${request.title}">Oil leak</h2>
+    <p>
+        <a th:href="@{/repair-requests}">Back to requests</a> |
+        <a th:href="@{/repair-requests/new}">New request</a>
+    </p>
+    <p th:if="${successMessage}" th:text="${successMessage}"></p>
+    <dl>
+        <dt>Priority</dt><dd th:text="${request.priority}">MEDIUM</dd>
+        <dt>Status</dt><dd th:text="${request.status}">NEW</dd>
+        <dt>Equipment</dt>
+        <dd><a th:href="@{/equipment/{id}(id=${request.equipmentId})}"
+               th:text="${request.equipmentName + ' (' + request.inventoryNumber + ')'}"></a></dd>
+        <dt>Current location</dt><dd th:text="${request.location}"></dd>
+        <dt>Author</dt><dd th:text="${request.authorName}"></dd>
+        <dt>Technician</dt>
+        <dd th:text="${request.technicianName != null ? request.technicianName : 'Not assigned'}"></dd>
+        <dt>Created</dt><dd th:text="${request.createdAt}"></dd>
+        <dt>Last updated</dt><dd th:text="${request.updatedAt}"></dd>
+    </dl>
+    <dl th:if="${request.assignedAt != null}">
+        <dt>Last assigned</dt><dd th:text="${request.assignedAt}"></dd>
+    </dl>
+    <dl th:if="${request.startedAt != null}">
+        <dt>First started</dt><dd th:text="${request.startedAt}"></dd>
+    </dl>
+    <dl th:if="${request.completedAt != null}">
+        <dt>Completed by technician</dt><dd th:text="${request.completedAt}"></dd>
+    </dl>
+    <dl th:if="${request.closedAt != null}">
+        <dt th:text="${request.status.name() == 'CANCELLED' ? 'Cancelled' : 'Closed'}"></dt>
+        <dd th:text="${request.closedAt}"></dd>
+    </dl>
+    <section>
+        <h2>Problem description</h2>
+        <p style="white-space: pre-wrap" th:text="${request.description}"></p>
+    </section>
+    <section th:if="${request.status.name() == 'COMPLETED' or request.status.name() == 'CLOSED'}">
+        <h2>Repair result</h2>
+        <p style="white-space: pre-wrap" th:text="${request.resolution}"></p>
+    </section>
+    <section th:if="${request.status.name() == 'CANCELLED'}">
+        <h2>Cancellation reason</h2>
+        <p style="white-space: pre-wrap" th:text="${request.cancellationReason}"></p>
+    </section>
+</main>
+</body>
+</html>

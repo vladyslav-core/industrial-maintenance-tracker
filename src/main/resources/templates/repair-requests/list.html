@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Repair requests | Industrial Maintenance Tracker</title>
+</head>
+<body>
+<main>
+    <h1>Repair requests</h1>
+    <p>
+        <a th:href="@{/}">Home</a> |
+        <a th:href="@{/equipment}">Equipment</a> |
+        <a th:href="@{/repair-requests/new}">New request</a>
+    </p>
+    <p th:if="${successMessage}" th:text="${successMessage}"></p>
+    <p th:if="${#lists.isEmpty(requests)}">No requests available.</p>
+    <table th:if="${not #lists.isEmpty(requests)}">
+        <thead>
+        <tr>
+            <th>Number</th><th>Problem</th><th>Equipment</th><th>Author</th>
+            <th>Technician</th><th>Priority</th><th>Status</th>
+            <th>Created</th><th>Last updated</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="item : ${requests}">
+            <td><a th:href="@{/repair-requests/{id}(id=${item.id})}"
+                   th:text="${'#' + item.id}">#123</a></td>
+            <td th:text="${item.title}">Oil leak</td>
+            <td><a th:href="@{/equipment/{id}(id=${item.equipmentId})}"
+                   th:text="${item.equipmentName}">Hydraulic press</a></td>
+            <td th:text="${item.authorName}">Author</td>
+            <td th:text="${item.technicianName != null ? item.technicianName : 'Not assigned'}"></td>
+            <td th:text="${item.priority}">MEDIUM</td>
+            <td th:text="${item.status}">NEW</td>
+            <td th:text="${item.createdAt}"></td>
+            <td th:text="${item.updatedAt}"></td>
+        </tr>
+        </tbody>
+    </table>
+</main>
+</body>
+</html>
