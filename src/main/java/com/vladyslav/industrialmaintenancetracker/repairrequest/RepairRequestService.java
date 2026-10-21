@@ -6,11 +6,16 @@ import com.vladyslav.industrialmaintenancetracker.equipment.EquipmentStatus;
 import com.vladyslav.industrialmaintenancetracker.exception.EquipmentNotAvailableException;
 import com.vladyslav.industrialmaintenancetracker.exception.EquipmentNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.exception.RepairRequestNotFoundException;
+import com.vladyslav.industrialmaintenancetracker.exception.RepairRequestEditConflictException;
 import com.vladyslav.industrialmaintenancetracker.exception.UserNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestCreateForm;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestDetails;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestEquipmentOption;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestListItem;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestEditForm;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestFilters;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestFilterOption;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestListPage;
 import com.vladyslav.industrialmaintenancetracker.user.Role;
 import com.vladyslav.industrialmaintenancetracker.user.User;
 import com.vladyslav.industrialmaintenancetracker.user.UserRepository;
@@ -18,7 +23,13 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.stream.Stream;
 
 @Service
 public class RepairRequestService {
@@ -55,24 +66,14 @@ public class RepairRequestService {
                         viewer.getRole() == Role.ADMIN,
                         viewer.getRole() == Role.TECHNICIAN
                 ).stream()
-                .map(request -> new RepairRequestListItem(
-                        request.getId(), request.getTitle(),
-                        request.getEquipment().getId(), request.getEquipment().getName(),
-                        request.getCreatedBy().getFullName(), technicianName(request),
-                        request.getPriority(), request.getStatus(),
-                        request.getCreatedAt(), request.getUpdatedAt()
-                ))
+                .map(this::listItem)
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public RepairRequestDetails getDetails(Long requestId, Long viewerId) {
         User viewer = activeViewer(viewerId);
-        RepairRequest request = requestRepository.findVisibleById(
-                requestId, viewer.getId(),
-                viewer.getRole() == Role.ADMIN,
-                viewer.getRole() == Role.TECHNICIAN
-        ).orElseThrow(() -> new RepairRequestNotFoundException(requestId));
+        RepairRequest request = visibleRequest(requestId, viewer);
 
         return new RepairRequestDetails(
                 request.getId(), request.getTitle(), request.getDescription(),
@@ -82,8 +83,71 @@ public class RepairRequestService {
                 request.getPriority(), request.getStatus(),
                 request.getResolution(), request.getCancellationReason(),
                 request.getCreatedAt(), request.getUpdatedAt(), request.getAssignedAt(),
-                request.getStartedAt(), request.getCompletedAt(), request.getClosedAt()
+                request.getStartedAt(), request.getCompletedAt(), request.getClosedAt(),
+                canEdit(request, viewer)
         );
+    }
+
+    @Transactional(readOnly = true)
+    public RepairRequestListPage getListPage(RepairRequestFilters filters, Long viewerId) {
+        User viewer = activeViewer(viewerId);
+        boolean admin = viewer.getRole() == Role.ADMIN;
+        boolean technician = viewer.getRole() == Role.TECHNICIAN;
+        String search = filters.getSearch() == null ? "" : filters.getSearch().trim();
+        String escaped = search.toLowerCase(Locale.ROOT)
+                .replace("!", "!!").replace("%", "!%").replace("_", "!_");
+        RepairRequestScope scope = technician ? filters.getScope() : RepairRequestScope.ALL;
+        List<RepairRequest> visible = requestRepository.findVisible(viewerId, admin, technician);
+        List<RepairRequestListItem> items = requestRepository.searchVisible(
+                viewerId, admin, technician, "%" + escaped + "%", searchId(search),
+                filters.getStatus(), filters.getPriority(), filters.getEquipmentId(),
+                admin ? filters.getAuthorId() : null, filters.getTechnicianId(),
+                scope == RepairRequestScope.CREATED_BY_ME, scope == RepairRequestScope.ASSIGNED_TO_ME
+        ).stream().map(this::listItem).toList();
+        return new RepairRequestListPage(
+                items,
+                options(visible.stream().map(request -> new RepairRequestFilterOption(
+                        request.getEquipment().getId(), request.getEquipment().getName()
+                        + " (" + request.getEquipment().getInventoryNumber() + ")"
+                ))),
+                admin ? options(visible.stream().map(request -> new RepairRequestFilterOption(
+                        request.getCreatedBy().getId(), request.getCreatedBy().getFullName()
+                ))) : List.of(),
+                options(visible.stream().filter(request -> request.getAssignedTechnician() != null)
+                        .map(request -> new RepairRequestFilterOption(
+                                request.getAssignedTechnician().getId(), technicianName(request)
+                        ))),
+                admin, technician
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public RepairRequestEditForm getEditForm(Long requestId, Long viewerId) {
+        User viewer = activeViewer(viewerId);
+        RepairRequest request = visibleRequest(requestId, viewer);
+        requireEditable(request, viewer);
+        return new RepairRequestEditForm(request.getTitle(), request.getDescription(), request.getUpdatedAt());
+    }
+
+    @Transactional
+    public void updateDetails(Long requestId, RepairRequestEditForm form, Long viewerId) {
+        User viewer = activeViewer(viewerId);
+        RepairRequest request = visibleRequest(requestId, viewer);
+        requireEditable(request, viewer);
+        if (!Objects.equals(request.getUpdatedAt(), form.getUpdatedAt())) {
+            throw new RepairRequestEditConflictException();
+        }
+        Instant changedAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
+        if (!changedAt.isAfter(form.getUpdatedAt())) {
+            changedAt = form.getUpdatedAt().plus(1, ChronoUnit.MICROS);
+        }
+        int changed = requestRepository.updateOwnNewDetails(
+                requestId, viewerId, RepairRequestStatus.NEW,
+                form.getTitle().trim(), form.getDescription().trim(), form.getUpdatedAt(), changedAt
+        );
+        if (changed != 1) {
+            throw new RepairRequestEditConflictException();
+        }
     }
 
     @Transactional
@@ -108,6 +172,52 @@ public class RepairRequestService {
                 form.getPriority()
         );
         return requestRepository.save(request);
+    }
+
+    private RepairRequest visibleRequest(Long requestId, User viewer) {
+        return requestRepository.findVisibleById(
+                requestId, viewer.getId(), viewer.getRole() == Role.ADMIN,
+                viewer.getRole() == Role.TECHNICIAN
+        ).orElseThrow(() -> new RepairRequestNotFoundException(requestId));
+    }
+
+    private boolean canEdit(RepairRequest request, User viewer) {
+        return request.getCreatedBy().getId().equals(viewer.getId())
+                && request.getStatus() == RepairRequestStatus.NEW
+                && request.getAssignedTechnician() == null;
+    }
+
+    private void requireEditable(RepairRequest request, User viewer) {
+        if (!request.getCreatedBy().getId().equals(viewer.getId())) {
+            throw new AccessDeniedException("Only the author can edit request details");
+        }
+        if (!canEdit(request, viewer)) {
+            throw new RepairRequestEditConflictException();
+        }
+    }
+
+    private RepairRequestListItem listItem(RepairRequest request) {
+        return new RepairRequestListItem(
+                request.getId(), request.getTitle(),
+                request.getEquipment().getId(), request.getEquipment().getName(),
+                request.getCreatedBy().getFullName(), technicianName(request),
+                request.getPriority(), request.getStatus(), request.getCreatedAt(), request.getUpdatedAt()
+        );
+    }
+
+    private List<RepairRequestFilterOption> options(Stream<RepairRequestFilterOption> options) {
+        return options.distinct().sorted(Comparator
+                .comparing(RepairRequestFilterOption::label, String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(RepairRequestFilterOption::id)).toList();
+    }
+
+    private Long searchId(String search) {
+        try {
+            long id = Long.parseLong(search.startsWith("#") ? search.substring(1) : search);
+            return id > 0 ? id : null;
+        } catch (NumberFormatException exception) {
+            return null;
+        }
     }
 
     private User activeViewer(Long viewerId) {

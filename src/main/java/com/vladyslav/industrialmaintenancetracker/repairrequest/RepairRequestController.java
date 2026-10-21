@@ -3,7 +3,12 @@ package com.vladyslav.industrialmaintenancetracker.repairrequest;
 import com.vladyslav.industrialmaintenancetracker.exception.EquipmentNotAvailableException;
 import com.vladyslav.industrialmaintenancetracker.exception.EquipmentNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.exception.RepairRequestNotFoundException;
+import com.vladyslav.industrialmaintenancetracker.exception.RepairRequestEditConflictException;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestCreateForm;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestEditForm;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestFilters;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestListPage;
+import jakarta.servlet.http.HttpServletResponse;
 import com.vladyslav.industrialmaintenancetracker.security.CustomUserDetails;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -32,8 +37,16 @@ public class RepairRequestController {
     }
 
     @GetMapping
-    public String list(@AuthenticationPrincipal CustomUserDetails currentUser, Model model) {
-        model.addAttribute("requests", requestService.getList(currentUser.getUserId()));
+    public String list(
+            @ModelAttribute("filters") RepairRequestFilters filters,
+            @AuthenticationPrincipal CustomUserDetails currentUser,
+            Model model
+    ) {
+        RepairRequestListPage page = requestService.getListPage(filters, currentUser.getUserId());
+        model.addAttribute("page", page);
+        model.addAttribute("requests", page.requests());
+        model.addAttribute("statuses", RepairRequestStatus.values());
+        model.addAttribute("priorities", RepairRequestPriority.values());
         return "repair-requests/list";
     }
 
@@ -45,6 +58,55 @@ public class RepairRequestController {
     ) {
         model.addAttribute("request", requestService.getDetails(requestId, currentUser.getUserId()));
         return "repair-requests/details";
+    }
+
+    @GetMapping("/{requestId}/edit")
+    public String showEditForm(
+            @PathVariable Long requestId,
+            @AuthenticationPrincipal CustomUserDetails currentUser,
+            Model model,
+            RedirectAttributes redirectAttributes
+    ) {
+        try {
+            model.addAttribute("editForm", requestService.getEditForm(requestId, currentUser.getUserId()));
+            editModel(requestId, model);
+            return "repair-requests/edit";
+        } catch (RepairRequestEditConflictException exception) {
+            redirectAttributes.addFlashAttribute("errorMessage", exception.getMessage());
+            return "redirect:/repair-requests/" + requestId;
+        }
+    }
+
+    @PostMapping("/{requestId}/edit")
+    public String updateDetails(
+            @PathVariable Long requestId,
+            @Valid @ModelAttribute("editForm") RepairRequestEditForm form,
+            BindingResult bindingResult,
+            @AuthenticationPrincipal CustomUserDetails currentUser,
+            Model model,
+            RedirectAttributes redirectAttributes,
+            HttpServletResponse response
+    ) {
+        editModel(requestId, model);
+        try {
+            if (bindingResult.hasErrors()) {
+                requestService.getEditForm(requestId, currentUser.getUserId());
+                return "repair-requests/edit";
+            }
+            requestService.updateDetails(requestId, form, currentUser.getUserId());
+            redirectAttributes.addFlashAttribute("successMessage", "Request details updated.");
+            return "redirect:/repair-requests/" + requestId;
+        } catch (RepairRequestEditConflictException exception) {
+            response.setStatus(HttpStatus.CONFLICT.value());
+            model.addAttribute("errorMessage", exception.getMessage());
+            model.addAttribute("canSave", false);
+            return "repair-requests/edit";
+        }
+    }
+
+    private void editModel(Long requestId, Model model) {
+        model.addAttribute("requestId", requestId);
+        model.addAttribute("canSave", true);
     }
 
     @ExceptionHandler(RepairRequestNotFoundException.class)

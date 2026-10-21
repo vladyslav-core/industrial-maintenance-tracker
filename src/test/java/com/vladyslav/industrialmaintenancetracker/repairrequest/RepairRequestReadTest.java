@@ -5,6 +5,9 @@ import com.vladyslav.industrialmaintenancetracker.equipment.EquipmentRepository;
 import com.vladyslav.industrialmaintenancetracker.exception.RepairRequestNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestDetails;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestListItem;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestFilters;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import com.vladyslav.industrialmaintenancetracker.user.Role;
 import com.vladyslav.industrialmaintenancetracker.user.User;
 import com.vladyslav.industrialmaintenancetracker.user.UserRepository;
@@ -146,6 +149,123 @@ class RepairRequestReadTest {
                 .isInstanceOf(AccessDeniedException.class);
         assertThatThrownBy(() -> service.getDetails(ownNew, requester.getId()))
                 .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Role.class)
+    void emptyFiltersPreserveVisibilityAndStableOrder(Role role) {
+        Long viewer = switch (role) {
+            case ADMIN -> admin.getId();
+            case TECHNICIAN -> technician.getId();
+            case REQUESTER -> requester.getId();
+        };
+        assertThat(service.getListPage(new RepairRequestFilters(), viewer).requests())
+                .isEqualTo(service.getList(viewer));
+    }
+
+    @Test
+    void searchesByNumberWithOptionalHashPrefix() {
+        RepairRequestFilters filters = new RepairRequestFilters();
+        for (String search : new String[]{ownNew.toString(), "#" + ownNew}) {
+            filters.setSearch(search);
+            assertThat(service.getListPage(filters, requester.getId()).requests())
+                    .extracting(RepairRequestListItem::id).containsExactly(ownNew);
+        }
+    }
+
+    @Test
+    void searchesTitleAndDescriptionIgnoringCaseAndOuterWhitespace() {
+        jdbc.update("UPDATE repair_requests SET title = 'Seal crack', description = 'Needs pressure check' WHERE id = ?", ownNew);
+        entityManager.clear();
+        RepairRequestFilters filters = new RepairRequestFilters();
+        for (String search : new String[]{"  CRACK  ", "PrEsSuRe"}) {
+            filters.setSearch(search);
+            assertThat(service.getListPage(filters, requester.getId()).requests())
+                    .extracting(RepairRequestListItem::id).containsExactly(ownNew);
+        }
+    }
+
+    @Test
+    void treatsLikeWildcardsAndEscapeCharacterAsLiteralText() {
+        jdbc.update("UPDATE repair_requests SET title = 'Leak at 50%_power!' WHERE id = ?", ownNew);
+        entityManager.clear();
+        RepairRequestFilters filters = new RepairRequestFilters();
+        for (String search : new String[]{"%_", "!"}) {
+            filters.setSearch(search);
+            assertThat(service.getListPage(filters, admin.getId()).requests())
+                    .extracting(RepairRequestListItem::id).containsExactly(ownNew);
+        }
+    }
+
+    @Test
+    void appliesStatusPriorityEquipmentAuthorAndTechnicianFiltersTogether() {
+        RepairRequestFilters filters = new RepairRequestFilters();
+        filters.setStatus(RepairRequestStatus.ASSIGNED);
+        assertThat(service.getListPage(filters, admin.getId()).requests())
+                .extracting(RepairRequestListItem::id)
+                .containsExactly(foreignRequest, technicianSelfAssigned, ownAssigned);
+        filters.setStatus(null);
+        jdbc.update("UPDATE repair_requests SET priority = 'CRITICAL' WHERE id = ?", ownNew);
+        entityManager.clear();
+        filters.setPriority(RepairRequestPriority.CRITICAL);
+        assertThat(service.getListPage(filters, admin.getId()).requests())
+                .extracting(RepairRequestListItem::id).containsExactly(ownNew);
+        Equipment pump = equipmentRepository.saveAndFlush(new Equipment("Water pump", "PUMP-READ-001", null, "Workshop B"));
+        jdbc.update("UPDATE repair_requests SET equipment_id = ? WHERE id = ?", pump.getId(), ownNew);
+        entityManager.clear();
+        filters.setPriority(null);
+        filters.setEquipmentId(pump.getId());
+        assertThat(service.getListPage(filters, admin.getId()).requests())
+                .extracting(RepairRequestListItem::id).containsExactly(ownNew);
+        filters.setEquipmentId(null);
+        filters.setAuthorId(requester.getId());
+        assertThat(service.getListPage(filters, admin.getId()).requests())
+                .extracting(RepairRequestListItem::id).containsExactly(ownAssigned, ownNew);
+        filters.setStatus(RepairRequestStatus.ASSIGNED);
+        filters.setTechnicianId(technician.getId());
+        assertThat(service.getListPage(filters, admin.getId()).requests())
+                .extracting(RepairRequestListItem::id).containsExactly(ownAssigned);
+        filters.setAuthorId(null);
+        assertThat(service.getListPage(filters, admin.getId()).requests())
+                .extracting(RepairRequestListItem::id).containsExactly(technicianSelfAssigned, ownAssigned);
+    }
+
+    @Test
+    void technicianCanNarrowToCreatedOrAssignedRequests() {
+        RepairRequestFilters filters = new RepairRequestFilters();
+        filters.setScope(RepairRequestScope.CREATED_BY_ME);
+        assertThat(service.getListPage(filters, technician.getId()).requests())
+                .extracting(RepairRequestListItem::id).containsExactly(technicianSelfAssigned, technicianOwn);
+        filters.setScope(RepairRequestScope.ASSIGNED_TO_ME);
+        assertThat(service.getListPage(filters, technician.getId()).requests())
+                .extracting(RepairRequestListItem::id).containsExactly(technicianSelfAssigned, ownAssigned);
+    }
+
+    @Test
+    void forgedFiltersCannotExposeHiddenRequestsOrOptions() {
+        Equipment hidden = equipmentRepository.saveAndFlush(new Equipment("Hidden pump", "HIDDEN-READ-001", null, "Workshop C"));
+        jdbc.update("UPDATE repair_requests SET equipment_id = ? WHERE id = ?", hidden.getId(), foreignRequest);
+        entityManager.clear();
+        RepairRequestFilters filters = new RepairRequestFilters();
+        filters.setSearch("#" + foreignRequest);
+        filters.setAuthorId(admin.getId());
+        filters.setTechnicianId(otherTechnician.getId());
+        filters.setScope(RepairRequestScope.ASSIGNED_TO_ME);
+        var page = service.getListPage(filters, requester.getId());
+        assertThat(page.requests()).isEmpty();
+        assertThat(page.authors()).isEmpty();
+        assertThat(page.equipment()).noneMatch(option -> option.id().equals(hidden.getId()));
+        assertThat(page.technicians()).noneMatch(option -> option.id().equals(otherTechnician.getId()));
+    }
+
+    @Test
+    void emptySearchResultKeepsVisibleFilterOptions() {
+        RepairRequestFilters filters = new RepairRequestFilters();
+        filters.setSearch("unmatched phrase");
+        var page = service.getListPage(filters, requester.getId());
+        assertThat(page.requests()).isEmpty();
+        assertThat(page.equipment()).hasSize(1);
+        assertThat(page.technicians()).hasSize(1);
     }
 
     private User saveUser(String name, String email, Role role) {

@@ -13,7 +13,57 @@
         <a th:href="@{/repair-requests/new}">New request</a>
     </p>
     <p th:if="${successMessage}" th:text="${successMessage}"></p>
-    <p th:if="${#lists.isEmpty(requests)}">No requests available.</p>
+    <form method="get" th:action="@{/repair-requests}" th:object="${filters}">
+        <p>
+            <label for="search">Number or problem text</label>
+            <input id="search" type="search" th:field="*{search}">
+        </p>
+        <p>
+            <label for="status">Status</label>
+            <select id="status" th:field="*{status}">
+                <option value="">All statuses</option>
+                <option th:each="value : ${statuses}" th:value="${value}" th:text="${value}"></option>
+            </select>
+            <label for="priority">Priority</label>
+            <select id="priority" th:field="*{priority}">
+                <option value="">All priorities</option>
+                <option th:each="value : ${priorities}" th:value="${value}" th:text="${value}"></option>
+            </select>
+        </p>
+        <p>
+            <label for="equipmentId">Equipment</label>
+            <select id="equipmentId" th:field="*{equipmentId}">
+                <option value="">All equipment</option>
+                <option th:each="option : ${page.equipment}" th:value="${option.id}"
+                        th:text="${option.label}"></option>
+            </select>
+            <label for="technicianId">Technician</label>
+            <select id="technicianId" th:field="*{technicianId}">
+                <option value="">All technicians</option>
+                <option th:each="option : ${page.technicians}" th:value="${option.id}"
+                        th:text="${option.label}"></option>
+            </select>
+        </p>
+        <p th:if="${page.administrator}">
+            <label for="authorId">Author</label>
+            <select id="authorId" th:field="*{authorId}">
+                <option value="">All authors</option>
+                <option th:each="option : ${page.authors}" th:value="${option.id}"
+                        th:text="${option.label}"></option>
+            </select>
+        </p>
+        <p th:if="${page.technician}">
+            <label for="scope">Requests</label>
+            <select id="scope" th:field="*{scope}">
+                <option value="ALL">All visible</option>
+                <option value="CREATED_BY_ME">Created by me</option>
+                <option value="ASSIGNED_TO_ME">Assigned to me</option>
+            </select>
+        </p>
+        <button type="submit">Apply</button>
+        <a th:href="@{/repair-requests}">Clear</a>
+    </form>
+    <p th:if="${#lists.isEmpty(requests)}">No requests match the selected filters.</p>
     <table th:if="${not #lists.isEmpty(requests)}">
         <thead>
         <tr>

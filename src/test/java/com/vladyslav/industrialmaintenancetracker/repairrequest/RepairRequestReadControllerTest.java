@@ -3,6 +3,9 @@ package com.vladyslav.industrialmaintenancetracker.repairrequest;
 import com.vladyslav.industrialmaintenancetracker.exception.RepairRequestNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestDetails;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestListItem;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestListPage;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestFilters;
+import org.mockito.ArgumentCaptor;
 import com.vladyslav.industrialmaintenancetracker.security.CustomUserDetails;
 import com.vladyslav.industrialmaintenancetracker.security.SecurityConfig;
 import com.vladyslav.industrialmaintenancetracker.user.Role;
@@ -23,6 +26,9 @@ import java.util.List;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -45,10 +51,10 @@ class RepairRequestReadControllerTest {
     @EnumSource(Role.class)
     void eachRoleCanOpenListAndVisibleDetailsUsingAuthenticatedIdentity(Role role) throws Exception {
         Instant createdAt = Instant.parse("2026-10-20T10:00:00Z");
-        when(service.getList(42L)).thenReturn(List.of(new RepairRequestListItem(
+        when(service.getListPage(any(RepairRequestFilters.class), eq(42L))).thenReturn(new RepairRequestListPage(List.of(new RepairRequestListItem(
                 73L, "Oil leak in press", 7L, "Hydraulic press", "Test User", null,
                 RepairRequestPriority.MEDIUM, RepairRequestStatus.NEW, createdAt, createdAt
-        )));
+        )), List.of(), List.of(), List.of(), role == Role.ADMIN, role == Role.TECHNICIAN));
         when(service.getDetails(73L, 42L)).thenReturn(details("Oil leaking around the seal"));
 
         mockMvc.perform(get("/repair-requests")
@@ -66,7 +72,7 @@ class RepairRequestReadControllerTest {
                 .andExpect(content().string(containsString("Workshop A")))
                 .andExpect(content().string(containsString("Not assigned")));
 
-        verify(service).getList(42L);
+        verify(service).getListPage(any(RepairRequestFilters.class), eq(42L));
         verify(service).getDetails(73L, 42L);
     }
 
@@ -100,13 +106,42 @@ class RepairRequestReadControllerTest {
                 .andExpect(content().string(containsString("&lt;script&gt;")));
     }
 
+    @Test
+    void bindsFiltersButUsesIdentityFromLogin() throws Exception {
+        when(service.getListPage(any(RepairRequestFilters.class), eq(42L)))
+                .thenReturn(new RepairRequestListPage(List.of(), List.of(), List.of(), List.of(), false, true));
+        mockMvc.perform(get("/repair-requests").with(currentUser(Role.TECHNICIAN))
+                        .param("search", "pump").param("status", "ASSIGNED").param("priority", "HIGH")
+                        .param("equipmentId", "7").param("technicianId", "8")
+                        .param("scope", "ASSIGNED_TO_ME").param("viewerId", "99").param("admin", "true"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("name=\"scope\"")))
+                .andExpect(content().string(not(containsString("name=\"authorId\""))));
+        ArgumentCaptor<RepairRequestFilters> captor = ArgumentCaptor.forClass(RepairRequestFilters.class);
+        verify(service).getListPage(captor.capture(), eq(42L));
+        RepairRequestFilters filters = captor.getValue();
+        assertThat(filters.getSearch()).isEqualTo("pump");
+        assertThat(filters.getStatus()).isEqualTo(RepairRequestStatus.ASSIGNED);
+        assertThat(filters.getPriority()).isEqualTo(RepairRequestPriority.HIGH);
+        assertThat(filters.getEquipmentId()).isEqualTo(7L);
+        assertThat(filters.getTechnicianId()).isEqualTo(8L);
+        assertThat(filters.getScope()).isEqualTo(RepairRequestScope.ASSIGNED_TO_ME);
+    }
+
+    @Test
+    void rejectsUnknownStatusFilter() throws Exception {
+        mockMvc.perform(get("/repair-requests").with(currentUser(Role.REQUESTER)).param("status", "UNKNOWN"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(service);
+    }
+
     private RepairRequestDetails details(String description) {
         Instant createdAt = Instant.parse("2026-10-20T10:00:00Z");
         return new RepairRequestDetails(
                 73L, "Oil leak in press", description,
                 7L, "Hydraulic press", "PRESS-001", "Workshop A", "Test User", null,
                 RepairRequestPriority.MEDIUM, RepairRequestStatus.NEW, null, null,
-                createdAt, createdAt, null, null, null, null
+                createdAt, createdAt, null, null, null, null, true
         );
     }
 

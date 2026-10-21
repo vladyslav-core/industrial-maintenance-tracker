@@ -12,6 +12,10 @@
         <a th:href="@{/repair-requests}">Back to requests</a> |
         <a th:href="@{/repair-requests/new}">New request</a>
     </p>
+    <p th:if="${request.canEdit}">
+        <a th:href="@{/repair-requests/{id}/edit(id=${request.id})}">Edit details</a>
+    </p>
+    <p th:if="${errorMessage}" th:text="${errorMessage}"></p>
     <p th:if="${successMessage}" th:text="${successMessage}"></p>
     <dl>
         <dt>Priority</dt><dd th:text="${request.priority}">MEDIUM</dd>
