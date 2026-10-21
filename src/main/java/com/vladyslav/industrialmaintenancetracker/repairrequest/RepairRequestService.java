@@ -8,6 +8,8 @@ import com.vladyslav.industrialmaintenancetracker.exception.EquipmentNotFoundExc
 import com.vladyslav.industrialmaintenancetracker.exception.RepairRequestNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.exception.RepairRequestEditConflictException;
 import com.vladyslav.industrialmaintenancetracker.exception.InvalidRepairRequestActionException;
+import com.vladyslav.industrialmaintenancetracker.exception.RepairRequestWorkConflictException;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestResolutionForm;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestTechnicianOption;
 import com.vladyslav.industrialmaintenancetracker.exception.UserNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestCreateForm;
@@ -88,7 +90,9 @@ public class RepairRequestService {
                 request.getStartedAt(), request.getCompletedAt(), request.getClosedAt(),
                 canEdit(request, viewer),
                 viewer.getRole() == Role.ADMIN && manageable(request),
-                viewer.getRole() == Role.ADMIN && request.getStatus() == RepairRequestStatus.ASSIGNED
+                viewer.getRole() == Role.ADMIN && request.getStatus() == RepairRequestStatus.ASSIGNED,
+                isAssignedTechnician(request, viewer) && request.getStatus() == RepairRequestStatus.ASSIGNED,
+                isAssignedTechnician(request, viewer) && request.getStatus() == RepairRequestStatus.IN_PROGRESS
         );
     }
 
@@ -208,6 +212,77 @@ public class RepairRequestService {
     public void changePriority(Long requestId, RepairRequestPriority priority, Long administratorId) {
         activeAdmin(administratorId);
         lockedRequest(requestId).changePriority(priority);
+    }
+
+    @Transactional
+    public void startWork(Long requestId, Long technicianId) {
+        User technician = activeTechnician(technicianId);
+        RepairRequest request = lockedTechnicianRequest(requestId, technician);
+        request.startWork(Instant.now());
+    }
+
+    @Transactional(readOnly = true)
+    public RepairRequestResolutionForm getResolutionForm(Long requestId, Long technicianId) {
+        User technician = activeTechnician(technicianId);
+        RepairRequest request = visibleRequest(requestId, technician);
+        requireAssignedTechnician(request, technician);
+        requireWorkInProgress(request);
+        return new RepairRequestResolutionForm(request.getResolution(), request.getUpdatedAt());
+    }
+
+    @Transactional
+    public void saveResolution(Long requestId, RepairRequestResolutionForm form, Long technicianId) {
+        User technician = activeTechnician(technicianId);
+        RepairRequest request = lockedTechnicianRequest(requestId, technician);
+        requireCurrentWorkForm(request, form);
+        request.saveResolution(form.getResolution());
+    }
+
+    @Transactional
+    public void completeWork(Long requestId, RepairRequestResolutionForm form, Long technicianId) {
+        User technician = activeTechnician(technicianId);
+        RepairRequest request = lockedTechnicianRequest(requestId, technician);
+        requireCurrentWorkForm(request, form);
+        request.completeWork(form.getResolution(), Instant.now());
+    }
+
+    private User activeTechnician(Long technicianId) {
+        User technician = activeViewer(technicianId);
+        if (technician.getRole() != Role.TECHNICIAN) {
+            throw new AccessDeniedException("Only a technician can perform repair work");
+        }
+        return technician;
+    }
+
+    private RepairRequest lockedTechnicianRequest(Long requestId, User technician) {
+        RepairRequest request = requestRepository.findVisibleByIdForUpdate(requestId, technician.getId())
+                .orElseThrow(() -> new RepairRequestNotFoundException(requestId));
+        requireAssignedTechnician(request, technician);
+        return request;
+    }
+
+    private boolean isAssignedTechnician(RepairRequest request, User viewer) {
+        return viewer.getRole() == Role.TECHNICIAN && request.getAssignedTechnician() != null
+                && request.getAssignedTechnician().getId().equals(viewer.getId());
+    }
+
+    private void requireAssignedTechnician(RepairRequest request, User technician) {
+        if (!isAssignedTechnician(request, technician)) {
+            throw new AccessDeniedException("Only the currently assigned technician can work on this request");
+        }
+    }
+
+    private void requireWorkInProgress(RepairRequest request) {
+        if (request.getStatus() != RepairRequestStatus.IN_PROGRESS) {
+            throw new RepairRequestWorkConflictException();
+        }
+    }
+
+    private void requireCurrentWorkForm(RepairRequest request, RepairRequestResolutionForm form) {
+        requireWorkInProgress(request);
+        if (form.getUpdatedAt() == null || !Objects.equals(request.getUpdatedAt(), form.getUpdatedAt())) {
+            throw new RepairRequestWorkConflictException();
+        }
     }
 
     private User activeAdmin(Long administratorId) {

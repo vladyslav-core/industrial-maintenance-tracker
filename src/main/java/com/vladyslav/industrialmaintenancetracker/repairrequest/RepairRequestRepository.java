@@ -17,6 +17,14 @@ public interface RepairRequestRepository extends JpaRepository<RepairRequest, Lo
     @Query("SELECT request FROM RepairRequest request WHERE request.id = :id")
     Optional<RepairRequest> findByIdForUpdate(@Param("id") Long id);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            SELECT request FROM RepairRequest request
+            WHERE request.id = :id
+              AND (request.createdBy.id = :viewerId OR request.assignedTechnician.id = :viewerId)
+            """)
+    Optional<RepairRequest> findVisibleByIdForUpdate(@Param("id") Long id, @Param("viewerId") Long viewerId);
+
     @Query("""
             SELECT request FROM RepairRequest request
             JOIN FETCH request.equipment

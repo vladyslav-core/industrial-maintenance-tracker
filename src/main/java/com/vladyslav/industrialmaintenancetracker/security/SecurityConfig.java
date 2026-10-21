@@ -53,6 +53,16 @@ public class SecurityConfig {
                                 "/repair-requests/*/unassign",
                                 "/repair-requests/*/priority"
                         ).hasRole("ADMIN")
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/repair-requests/*/complete"
+                        ).hasRole("TECHNICIAN")
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/repair-requests/*/start",
+                                "/repair-requests/*/resolution",
+                                "/repair-requests/*/complete"
+                        ).hasRole("TECHNICIAN")
                         .anyRequest().authenticated()
                 )
                 .formLogin(form -> form

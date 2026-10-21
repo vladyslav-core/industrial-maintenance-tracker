@@ -43,6 +43,13 @@
         <dt th:text="${request.status.name() == 'CANCELLED' ? 'Cancelled' : 'Closed'}"></dt>
         <dd th:text="${request.closedAt}"></dd>
     </dl>
+    <form th:if="${request.canStart}" method="post"
+          th:action="@{/repair-requests/{id}/start(id=${request.id})}">
+        <button type="submit">Start work</button>
+    </form>
+    <p th:if="${request.canWork}">
+        <a th:href="@{/repair-requests/{id}/complete(id=${request.id})}">Edit repair result</a>
+    </p>
     <section th:if="${request.canManage}">
         <h2>Assignment and priority</h2>
         <form th:if="${not #lists.isEmpty(technicianOptions)}" method="post"

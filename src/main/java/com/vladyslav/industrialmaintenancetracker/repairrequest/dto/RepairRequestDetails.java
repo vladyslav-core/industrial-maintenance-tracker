@@ -27,6 +27,8 @@ public record RepairRequestDetails(
         Instant closedAt,
         boolean canEdit,
         boolean canManage,
-        boolean canUnassign
+        boolean canUnassign,
+        boolean canStart,
+        boolean canWork
 ) {
 }

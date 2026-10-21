@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Repair result | Industrial Maintenance Tracker</title>
+</head>
+<body>
+<main>
+    <h1 th:text="${'Repair result for request #' + requestId}">Repair result</h1>
+    <p>
+        <a th:href="@{/repair-requests/{id}(id=${requestId})}">Back to request</a> |
+        <a th:href="@{/repair-requests/{id}/complete(id=${requestId})}">Reload current result</a>
+    </p>
+    <p th:if="${successMessage}" th:text="${successMessage}"></p>
+    <p th:if="${errorMessage}" th:text="${errorMessage}"></p>
+    <form method="post" th:action="@{/repair-requests/{id}/resolution(id=${requestId})}"
+          th:object="${resolutionForm}">
+        <input type="hidden" th:field="*{updatedAt}">
+        <p th:if="${#fields.hasErrors('updatedAt')}">Reload the request to get its current version.</p>
+        <p>
+            <label for="resolution">Repair result</label>
+            <textarea id="resolution" th:field="*{resolution}" rows="12"></textarea>
+            <span th:errors="*{resolution}"></span>
+        </p>
+        <p>Describe what was found, what was done, and the result of the final check.</p>
+        <p>A draft may be empty. A repair result is required to complete the repair.</p>
+        <div th:if="${canSave}">
+            <button type="submit">Save draft</button>
+            <button type="submit" th:formaction="@{/repair-requests/{id}/complete(id=${requestId})}">Complete repair</button>
+        </div>
+    </form>
+</main>
+</body>
+</html>

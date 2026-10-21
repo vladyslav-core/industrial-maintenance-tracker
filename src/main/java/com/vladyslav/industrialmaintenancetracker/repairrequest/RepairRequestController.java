@@ -5,6 +5,8 @@ import com.vladyslav.industrialmaintenancetracker.exception.EquipmentNotFoundExc
 import com.vladyslav.industrialmaintenancetracker.exception.RepairRequestNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.exception.RepairRequestEditConflictException;
 import com.vladyslav.industrialmaintenancetracker.exception.InvalidRepairRequestActionException;
+import com.vladyslav.industrialmaintenancetracker.exception.RepairRequestWorkConflictException;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestResolutionForm;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestDetails;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestCreateForm;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestEditForm;
@@ -112,6 +114,102 @@ public class RepairRequestController {
             redirectAttributes.addFlashAttribute("errorMessage", exception.getMessage());
         }
         return "redirect:/repair-requests/" + requestId;
+    }
+
+    @PostMapping("/{requestId}/start")
+    public String startWork(
+            @PathVariable Long requestId,
+            @AuthenticationPrincipal CustomUserDetails currentUser,
+            RedirectAttributes redirectAttributes
+    ) {
+        try {
+            requestService.startWork(requestId, currentUser.getUserId());
+            redirectAttributes.addFlashAttribute("successMessage", "Repair work started.");
+        } catch (InvalidRepairRequestActionException exception) {
+            redirectAttributes.addFlashAttribute("errorMessage", exception.getMessage());
+        }
+        return "redirect:/repair-requests/" + requestId;
+    }
+
+    @GetMapping("/{requestId}/complete")
+    public String showResolutionForm(
+            @PathVariable Long requestId,
+            @AuthenticationPrincipal CustomUserDetails currentUser,
+            Model model,
+            RedirectAttributes redirectAttributes
+    ) {
+        try {
+            model.addAttribute("resolutionForm", requestService.getResolutionForm(requestId, currentUser.getUserId()));
+            workModel(requestId, model);
+            return "repair-requests/resolution";
+        } catch (RepairRequestWorkConflictException exception) {
+            redirectAttributes.addFlashAttribute("errorMessage", exception.getMessage());
+            return "redirect:/repair-requests/" + requestId;
+        }
+    }
+
+    @PostMapping("/{requestId}/resolution")
+    public String saveResolution(
+            @PathVariable Long requestId,
+            @Valid @ModelAttribute("resolutionForm") RepairRequestResolutionForm form,
+            BindingResult bindingResult,
+            @AuthenticationPrincipal CustomUserDetails currentUser,
+            Model model,
+            RedirectAttributes redirectAttributes,
+            HttpServletResponse response
+    ) {
+        return submitResolution(requestId, form, bindingResult, currentUser, model, redirectAttributes, response, false);
+    }
+
+    @PostMapping("/{requestId}/complete")
+    public String completeWork(
+            @PathVariable Long requestId,
+            @Valid @ModelAttribute("resolutionForm") RepairRequestResolutionForm form,
+            BindingResult bindingResult,
+            @AuthenticationPrincipal CustomUserDetails currentUser,
+            Model model,
+            RedirectAttributes redirectAttributes,
+            HttpServletResponse response
+    ) {
+        if (form.getResolution() == null || form.getResolution().isBlank()) {
+            bindingResult.rejectValue("resolution", "required", "Describe the repair result before completing the request.");
+        }
+        return submitResolution(requestId, form, bindingResult, currentUser, model, redirectAttributes, response, true);
+    }
+
+    private String submitResolution(
+            Long requestId, RepairRequestResolutionForm form, BindingResult bindingResult,
+            CustomUserDetails currentUser, Model model, RedirectAttributes redirectAttributes,
+            HttpServletResponse response, boolean complete
+    ) {
+        workModel(requestId, model);
+        try {
+            if (bindingResult.hasErrors()) {
+                requestService.getResolutionForm(requestId, currentUser.getUserId());
+                return "repair-requests/resolution";
+            }
+            if (complete) {
+                requestService.completeWork(requestId, form, currentUser.getUserId());
+                redirectAttributes.addFlashAttribute("successMessage", "Repair completed and submitted for review.");
+                return "redirect:/repair-requests/" + requestId;
+            }
+            requestService.saveResolution(requestId, form, currentUser.getUserId());
+            redirectAttributes.addFlashAttribute("successMessage", "Draft saved.");
+            return "redirect:/repair-requests/" + requestId + "/complete";
+        } catch (RepairRequestWorkConflictException exception) {
+            response.setStatus(HttpStatus.CONFLICT.value());
+            model.addAttribute("errorMessage", exception.getMessage());
+            model.addAttribute("canSave", false);
+            return "repair-requests/resolution";
+        } catch (InvalidRepairRequestActionException exception) {
+            bindingResult.rejectValue("resolution", "invalidResult", exception.getMessage());
+            return "repair-requests/resolution";
+        }
+    }
+
+    private void workModel(Long requestId, Model model) {
+        model.addAttribute("requestId", requestId);
+        model.addAttribute("canSave", true);
     }
 
     @GetMapping("/{requestId}/edit")

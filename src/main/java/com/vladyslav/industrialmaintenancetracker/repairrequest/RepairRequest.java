@@ -132,6 +132,44 @@ public class RepairRequest {
         this.priority = priority;
     }
 
+    public void startWork(Instant startedAt) {
+        if (status != RepairRequestStatus.ASSIGNED) {
+            throw new InvalidRepairRequestActionException("Work can only be started for an ASSIGNED request.");
+        }
+        Objects.requireNonNull(startedAt, "Start time must not be null");
+        if (this.startedAt == null) {
+            this.startedAt = startedAt;
+        }
+        status = RepairRequestStatus.IN_PROGRESS;
+    }
+
+    public void saveResolution(String resolution) {
+        requireInProgress();
+        this.resolution = normalizedResolution(resolution);
+    }
+
+    public void completeWork(String resolution, Instant completedAt) {
+        requireInProgress();
+        String result = normalizedResolution(resolution);
+        if (result == null) {
+            throw new InvalidRepairRequestActionException("Describe the repair result before completing the request.");
+        }
+        Objects.requireNonNull(completedAt, "Completion time must not be null");
+        this.resolution = result;
+        this.completedAt = completedAt;
+        status = RepairRequestStatus.COMPLETED;
+    }
+
+    private void requireInProgress() {
+        if (status != RepairRequestStatus.IN_PROGRESS) {
+            throw new InvalidRepairRequestActionException("Repair results can only be changed while work is IN_PROGRESS.");
+        }
+    }
+
+    private String normalizedResolution(String resolution) {
+        return resolution == null || resolution.isBlank() ? null : resolution.trim();
+    }
+
     private void requireManageable() {
         if (status != RepairRequestStatus.NEW && status != RepairRequestStatus.ASSIGNED
                 && status != RepairRequestStatus.IN_PROGRESS) {
