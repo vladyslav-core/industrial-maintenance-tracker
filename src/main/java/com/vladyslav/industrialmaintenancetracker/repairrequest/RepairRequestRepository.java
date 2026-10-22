@@ -8,10 +8,15 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Collection;
 import java.util.Optional;
 import java.time.Instant;
 
 public interface RepairRequestRepository extends JpaRepository<RepairRequest, Long> {
+
+    boolean existsByEquipment_IdAndStatusIn(Long equipmentId, Collection<RepairRequestStatus> statuses);
+
+    boolean existsByAssignedTechnician_IdAndStatusIn(Long technicianId, Collection<RepairRequestStatus> statuses);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT request FROM RepairRequest request WHERE request.id = :id")

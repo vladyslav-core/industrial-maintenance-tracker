@@ -205,7 +205,7 @@ public class RepairRequestService {
         if (technicianId == null) {
             throw new InvalidRepairRequestActionException("Select an active technician.");
         }
-        // Lock the technician before the request; account restrictions will share this lock in step 12.
+        // Account changes take the same technician lock before checking open assignments.
         User technician = userRepository.findByIdForUpdate(technicianId)
                 .orElseThrow(() -> new InvalidRepairRequestActionException("Select an active technician."));
         lockedRequest(requestId).assignTo(technician, Instant.now());

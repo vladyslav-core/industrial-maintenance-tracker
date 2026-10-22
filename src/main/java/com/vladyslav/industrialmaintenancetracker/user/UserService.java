@@ -3,6 +3,9 @@ package com.vladyslav.industrialmaintenancetracker.user;
 import com.vladyslav.industrialmaintenancetracker.exception.DuplicateEmailException;
 import com.vladyslav.industrialmaintenancetracker.exception.LastActiveAdminException;
 import com.vladyslav.industrialmaintenancetracker.exception.UserNotFoundException;
+import com.vladyslav.industrialmaintenancetracker.exception.TechnicianHasOpenRequestsException;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.RepairRequestRepository;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.RepairRequestStatus;
 import com.vladyslav.industrialmaintenancetracker.user.dto.UserCreateForm;
 import com.vladyslav.industrialmaintenancetracker.user.dto.UserListItem;
 import com.vladyslav.industrialmaintenancetracker.user.dto.UserEditForm;
@@ -19,13 +22,16 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final RepairRequestRepository requestRepository;
 
     public UserService(
             UserRepository userRepository,
-            PasswordEncoder passwordEncoder
+            PasswordEncoder passwordEncoder,
+            RepairRequestRepository requestRepository
     ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.requestRepository = requestRepository;
     }
 
     @Transactional
@@ -84,7 +90,7 @@ public class UserService {
             Long userId,
             UserEditForm form
     ) {
-        User user = findUser(userId);
+        User user = lockedUser(userId);
 
         String fullName = form.getFullName().trim();
         String email = form.getEmail()
@@ -113,6 +119,10 @@ public class UserService {
             throw new LastActiveAdminException();
         }
 
+        if (user.getRole() == Role.TECHNICIAN && form.getRole() != Role.TECHNICIAN) {
+            requireNoOpenAssignments(userId);
+        }
+
         user.updateProfile(
                 fullName,
                 email,
@@ -122,14 +132,14 @@ public class UserService {
 
     @Transactional
     public void activateUser(Long userId) {
-        User user = findUser(userId);
+        User user = lockedUser(userId);
 
         user.activate();
     }
 
     @Transactional
     public void deactivateUser(Long userId) {
-        User user = findUser(userId);
+        User user = lockedUser(userId);
 
         if (!user.isActive()) {
             return;
@@ -145,7 +155,25 @@ public class UserService {
             throw new LastActiveAdminException();
         }
 
+        if (user.getRole() == Role.TECHNICIAN) {
+            requireNoOpenAssignments(userId);
+        }
+
         user.deactivate();
+    }
+
+    private void requireNoOpenAssignments(Long technicianId) {
+        // Assignment takes this account lock before locking the repair request.
+        if (requestRepository.existsByAssignedTechnician_IdAndStatusIn(technicianId, List.of(
+                RepairRequestStatus.ASSIGNED, RepairRequestStatus.IN_PROGRESS, RepairRequestStatus.COMPLETED
+        ))) {
+            throw new TechnicianHasOpenRequestsException();
+        }
+    }
+
+    private User lockedUser(Long userId) {
+        return userRepository.findByIdForUpdate(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
     }
 
     private User findUser(Long userId) {

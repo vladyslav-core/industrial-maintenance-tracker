@@ -1,11 +1,15 @@
 package com.vladyslav.industrialmaintenancetracker.user;
 
+import com.vladyslav.industrialmaintenancetracker.repairrequest.RepairRequestRepository;
 import com.vladyslav.industrialmaintenancetracker.exception.DuplicateEmailException;
 import com.vladyslav.industrialmaintenancetracker.exception.LastActiveAdminException;
 import com.vladyslav.industrialmaintenancetracker.exception.UserNotFoundException;
+import com.vladyslav.industrialmaintenancetracker.exception.TechnicianHasOpenRequestsException;
 import com.vladyslav.industrialmaintenancetracker.user.dto.UserEditForm;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -16,6 +20,9 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -30,13 +37,17 @@ class UserEditServiceTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private RepairRequestRepository requestRepository;
+
     private UserService userService;
 
     @BeforeEach
     void setUp() {
         userService = new UserService(
                 userRepository,
-                passwordEncoder
+                passwordEncoder,
+                requestRepository
         );
     }
 
@@ -79,7 +90,7 @@ class UserEditServiceTest {
                 Role.TECHNICIAN
         );
 
-        when(userRepository.findById(2L))
+        when(userRepository.findByIdForUpdate(2L))
                 .thenReturn(Optional.of(user));
         when(userRepository.existsByEmailIgnoreCase(
                 "anna.schmidt@example.com"
@@ -94,7 +105,7 @@ class UserEditServiceTest {
         assertThat(user.getRole())
                 .isEqualTo(Role.TECHNICIAN);
 
-        verify(userRepository).findById(2L);
+        verify(userRepository).findByIdForUpdate(2L);
         verify(userRepository).existsByEmailIgnoreCase(
                 "anna.schmidt@example.com"
         );
@@ -116,7 +127,7 @@ class UserEditServiceTest {
                 Role.TECHNICIAN
         );
 
-        when(userRepository.findById(3L))
+        when(userRepository.findByIdForUpdate(3L))
                 .thenReturn(Optional.of(user));
 
         userService.updateUser(3L, form);
@@ -148,7 +159,7 @@ class UserEditServiceTest {
                 Role.TECHNICIAN
         );
 
-        when(userRepository.findById(4L))
+        when(userRepository.findByIdForUpdate(4L))
                 .thenReturn(Optional.of(user));
         when(userRepository.existsByEmailIgnoreCase(
                 "admin@example.com"
@@ -185,7 +196,7 @@ class UserEditServiceTest {
                 Role.REQUESTER
         );
 
-        when(userRepository.findById(5L))
+        when(userRepository.findByIdForUpdate(5L))
                 .thenReturn(Optional.of(administrator));
         when(userRepository.countByRoleAndActiveTrue(Role.ADMIN))
                 .thenReturn(1L);
@@ -217,7 +228,7 @@ class UserEditServiceTest {
                 Role.REQUESTER
         );
 
-        when(userRepository.findById(6L))
+        when(userRepository.findByIdForUpdate(6L))
                 .thenReturn(Optional.of(administrator));
         when(userRepository.countByRoleAndActiveTrue(Role.ADMIN))
                 .thenReturn(2L);
@@ -241,7 +252,7 @@ class UserEditServiceTest {
                 Role.REQUESTER
         );
 
-        when(userRepository.findById(99L))
+        when(userRepository.findByIdForUpdate(99L))
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(
@@ -250,12 +261,41 @@ class UserEditServiceTest {
                 .isInstanceOf(UserNotFoundException.class)
                 .hasMessageContaining("99");
 
-        verify(userRepository).findById(99L);
+        verify(userRepository).findByIdForUpdate(99L);
         verify(userRepository, never())
                 .existsByEmailIgnoreCase(anyString());
         verify(userRepository, never())
                 .countByRoleAndActiveTrue(Role.ADMIN);
         verifyNoInteractions(passwordEncoder);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = Role.class, names = {"ADMIN", "REQUESTER"})
+    void shouldRejectTechnicianRoleChangeWithoutPartlyUpdatingProfile(Role targetRole) {
+        User technician = createUser("Technician", "tech@example.com", Role.TECHNICIAN);
+        when(userRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(technician));
+        when(requestRepository.existsByAssignedTechnician_IdAndStatusIn(eq(7L), anyCollection())).thenReturn(true);
+
+        assertThatThrownBy(() -> userService.updateUser(7L,
+                new UserEditForm("Changed name", "changed@example.com", targetRole)))
+                .isInstanceOf(TechnicianHasOpenRequestsException.class);
+        assertThat(technician.getRole()).isEqualTo(Role.TECHNICIAN);
+        assertThat(technician.getFullName()).isEqualTo("Technician");
+        assertThat(technician.getEmail()).isEqualTo("tech@example.com");
+        var order = inOrder(userRepository, requestRepository);
+        order.verify(userRepository).findByIdForUpdate(7L);
+        order.verify(requestRepository).existsByAssignedTechnician_IdAndStatusIn(eq(7L), anyCollection());
+    }
+
+    @Test
+    void shouldAllowTechnicianProfileEditWithoutCheckingOpenAssignmentsWhenRoleIsUnchanged() {
+        User technician = createUser("Technician", "tech@example.com", Role.TECHNICIAN);
+        when(userRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(technician));
+        userService.updateUser(7L, new UserEditForm("Updated name", "updated@example.com", Role.TECHNICIAN));
+        assertThat(technician.getFullName()).isEqualTo("Updated name");
+        assertThat(technician.getEmail()).isEqualTo("updated@example.com");
+        assertThat(technician.getRole()).isEqualTo(Role.TECHNICIAN);
+        verifyNoInteractions(requestRepository);
     }
 
     private User createUser(

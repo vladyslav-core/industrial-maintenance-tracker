@@ -3,6 +3,7 @@ package com.vladyslav.industrialmaintenancetracker.user;
 import com.vladyslav.industrialmaintenancetracker.exception.DuplicateEmailException;
 import com.vladyslav.industrialmaintenancetracker.exception.LastActiveAdminException;
 import com.vladyslav.industrialmaintenancetracker.exception.UserNotFoundException;
+import com.vladyslav.industrialmaintenancetracker.exception.TechnicianHasOpenRequestsException;
 import com.vladyslav.industrialmaintenancetracker.user.dto.UserCreateForm;
 import com.vladyslav.industrialmaintenancetracker.user.dto.UserListItem;
 import jakarta.validation.Valid;
@@ -133,6 +134,11 @@ public class UserController {
             model.addAttribute("roles", Role.values());
 
             return "users/edit";
+        } catch (TechnicianHasOpenRequestsException exception) {
+            bindingResult.rejectValue("role", "openRepairRequests", exception.getMessage());
+            model.addAttribute("userId", userId);
+            model.addAttribute("roles", Role.values());
+            return "users/edit";
         } catch (LastActiveAdminException exception) {
             bindingResult.rejectValue(
                     "role",
@@ -194,6 +200,7 @@ public class UserController {
             );
         } catch (
                 LastActiveAdminException
+                | TechnicianHasOpenRequestsException
                 | UserNotFoundException exception
         ) {
             redirectAttributes.addFlashAttribute(

@@ -1,5 +1,6 @@
 package com.vladyslav.industrialmaintenancetracker.user;
 
+import com.vladyslav.industrialmaintenancetracker.repairrequest.RepairRequestRepository;
 import com.vladyslav.industrialmaintenancetracker.exception.DuplicateEmailException;
 import com.vladyslav.industrialmaintenancetracker.user.dto.UserCreateForm;
 import com.vladyslav.industrialmaintenancetracker.user.dto.UserListItem;
@@ -31,11 +32,14 @@ class UserServiceTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private RepairRequestRepository requestRepository;
+
     private UserService userService;
 
     @BeforeEach
     void setUp() {
-        userService = new UserService(userRepository, passwordEncoder);
+        userService = new UserService(userRepository, passwordEncoder, requestRepository);
     }
 
     @Test

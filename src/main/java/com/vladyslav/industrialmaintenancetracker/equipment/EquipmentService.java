@@ -6,6 +6,9 @@ import com.vladyslav.industrialmaintenancetracker.equipment.dto.EquipmentEditFor
 import com.vladyslav.industrialmaintenancetracker.equipment.dto.EquipmentListItem;
 import com.vladyslav.industrialmaintenancetracker.exception.DuplicateInventoryNumberException;
 import com.vladyslav.industrialmaintenancetracker.exception.EquipmentNotFoundException;
+import com.vladyslav.industrialmaintenancetracker.exception.EquipmentHasOpenRequestsException;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.RepairRequestRepository;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.RepairRequestStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,9 +18,11 @@ import java.util.List;
 public class EquipmentService {
 
     private final EquipmentRepository equipmentRepository;
+    private final RepairRequestRepository requestRepository;
 
-    public EquipmentService(EquipmentRepository equipmentRepository) {
+    public EquipmentService(EquipmentRepository equipmentRepository, RepairRequestRepository requestRepository) {
         this.equipmentRepository = equipmentRepository;
+        this.requestRepository = requestRepository;
     }
 
     @Transactional
@@ -103,7 +108,7 @@ public class EquipmentService {
             Long equipmentId,
             EquipmentEditForm form
     ) {
-        Equipment equipment = findEquipment(equipmentId);
+        Equipment equipment = lockedEquipment(equipmentId);
 
         String name = form.getName().trim();
         String inventoryNumber = form.getInventoryNumber().trim();
@@ -139,9 +144,23 @@ public class EquipmentService {
             Long equipmentId,
             EquipmentStatus targetStatus
     ) {
-        Equipment equipment = findEquipment(equipmentId);
+        // Request creation takes the same equipment lock before checking its status.
+        Equipment equipment = lockedEquipment(equipmentId);
+        if (targetStatus == EquipmentStatus.DECOMMISSIONED
+                && equipment.getStatus() != EquipmentStatus.DECOMMISSIONED
+                && requestRepository.existsByEquipment_IdAndStatusIn(equipmentId, List.of(
+                        RepairRequestStatus.NEW, RepairRequestStatus.ASSIGNED,
+                        RepairRequestStatus.IN_PROGRESS, RepairRequestStatus.COMPLETED
+                ))) {
+            throw new EquipmentHasOpenRequestsException();
+        }
 
         equipment.changeStatus(targetStatus);
+    }
+
+    private Equipment lockedEquipment(Long equipmentId) {
+        return equipmentRepository.findByIdForUpdate(equipmentId)
+                .orElseThrow(() -> new EquipmentNotFoundException(equipmentId));
     }
 
     private Equipment findEquipment(Long equipmentId) {

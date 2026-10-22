@@ -1,11 +1,13 @@
 package com.vladyslav.industrialmaintenancetracker.equipment;
 
+import com.vladyslav.industrialmaintenancetracker.repairrequest.RepairRequestRepository;
 import com.vladyslav.industrialmaintenancetracker.equipment.dto.EquipmentCreateForm;
 import com.vladyslav.industrialmaintenancetracker.equipment.dto.EquipmentDetails;
 import com.vladyslav.industrialmaintenancetracker.equipment.dto.EquipmentEditForm;
 import com.vladyslav.industrialmaintenancetracker.equipment.dto.EquipmentListItem;
 import com.vladyslav.industrialmaintenancetracker.exception.DuplicateInventoryNumberException;
 import com.vladyslav.industrialmaintenancetracker.exception.EquipmentNotFoundException;
+import com.vladyslav.industrialmaintenancetracker.exception.EquipmentHasOpenRequestsException;
 import com.vladyslav.industrialmaintenancetracker.exception.InvalidEquipmentStatusTransitionException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,6 +22,9 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -32,11 +37,14 @@ class EquipmentServiceTest {
     @Mock
     private EquipmentRepository equipmentRepository;
 
+    @Mock
+    private RepairRequestRepository requestRepository;
+
     private EquipmentService equipmentService;
 
     @BeforeEach
     void setUp() {
-        equipmentService = new EquipmentService(equipmentRepository);
+        equipmentService = new EquipmentService(equipmentRepository, requestRepository);
     }
 
     @Test
@@ -175,7 +183,7 @@ class EquipmentServiceTest {
                 "  Workshop B  "
         );
 
-        when(equipmentRepository.findById(7L))
+        when(equipmentRepository.findByIdForUpdate(7L))
                 .thenReturn(Optional.of(equipment));
 
         equipmentService.updateEquipment(7L, form);
@@ -186,7 +194,7 @@ class EquipmentServiceTest {
         assertThat(equipment.getDescription()).isNull();
         assertThat(equipment.getLocation()).isEqualTo("Workshop B");
 
-        verify(equipmentRepository).findById(7L);
+        verify(equipmentRepository).findByIdForUpdate(7L);
         verify(equipmentRepository, never())
                 .existsByInventoryNumberIgnoreCase(anyString());
     }
@@ -207,7 +215,7 @@ class EquipmentServiceTest {
                 "Workshop A"
         );
 
-        when(equipmentRepository.findById(7L))
+        when(equipmentRepository.findByIdForUpdate(7L))
                 .thenReturn(Optional.of(equipment));
 
         when(
@@ -237,7 +245,7 @@ class EquipmentServiceTest {
                 "Workshop A"
         );
 
-        when(equipmentRepository.findById(7L))
+        when(equipmentRepository.findByIdForUpdate(7L))
                 .thenReturn(Optional.of(equipment));
 
         equipmentService.changeEquipmentStatus(
@@ -248,7 +256,7 @@ class EquipmentServiceTest {
         assertThat(equipment.getStatus())
                 .isEqualTo(EquipmentStatus.UNDER_REPAIR);
 
-        verify(equipmentRepository).findById(7L);
+        verify(equipmentRepository).findByIdForUpdate(7L);
     }
 
     @Test
@@ -262,7 +270,7 @@ class EquipmentServiceTest {
 
         equipment.changeStatus(EquipmentStatus.DECOMMISSIONED);
 
-        when(equipmentRepository.findById(7L))
+        when(equipmentRepository.findByIdForUpdate(7L))
                 .thenReturn(Optional.of(equipment));
 
         assertThatThrownBy(
@@ -279,6 +287,29 @@ class EquipmentServiceTest {
 
         assertThat(equipment.getStatus())
                 .isEqualTo(EquipmentStatus.DECOMMISSIONED);
+    }
+
+    @Test
+    void shouldLockEquipmentBeforeCheckingOpenRequestsAndRejectDecommissioning() {
+        Equipment equipment = new Equipment("Press", "PRESS-001", null, "Workshop A");
+        when(equipmentRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(equipment));
+        when(requestRepository.existsByEquipment_IdAndStatusIn(eq(7L), anyCollection())).thenReturn(true);
+
+        assertThatThrownBy(() -> equipmentService.changeEquipmentStatus(7L, EquipmentStatus.DECOMMISSIONED))
+                .isInstanceOf(EquipmentHasOpenRequestsException.class);
+        assertThat(equipment.getStatus()).isEqualTo(EquipmentStatus.OPERATIONAL);
+        var order = inOrder(equipmentRepository, requestRepository);
+        order.verify(equipmentRepository).findByIdForUpdate(7L);
+        order.verify(requestRepository).existsByEquipment_IdAndStatusIn(eq(7L), anyCollection());
+    }
+
+    @Test
+    void shouldAllowDecommissioningWithoutOpenRequests() {
+        Equipment equipment = new Equipment("Press", "PRESS-001", null, "Workshop A");
+        when(equipmentRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(equipment));
+        when(requestRepository.existsByEquipment_IdAndStatusIn(eq(7L), anyCollection())).thenReturn(false);
+        equipmentService.changeEquipmentStatus(7L, EquipmentStatus.DECOMMISSIONED);
+        assertThat(equipment.getStatus()).isEqualTo(EquipmentStatus.DECOMMISSIONED);
     }
 
     @Test

@@ -1,7 +1,9 @@
 package com.vladyslav.industrialmaintenancetracker.user;
 
+import com.vladyslav.industrialmaintenancetracker.repairrequest.RepairRequestRepository;
 import com.vladyslav.industrialmaintenancetracker.exception.LastActiveAdminException;
 import com.vladyslav.industrialmaintenancetracker.exception.UserNotFoundException;
+import com.vladyslav.industrialmaintenancetracker.exception.TechnicianHasOpenRequestsException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,6 +19,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 
 @ExtendWith(MockitoExtension.class)
 class UserStatusServiceTest {
@@ -27,13 +32,17 @@ class UserStatusServiceTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private RepairRequestRepository requestRepository;
+
     private UserService userService;
 
     @BeforeEach
     void setUp() {
         userService = new UserService(
                 userRepository,
-                passwordEncoder
+                passwordEncoder,
+                requestRepository
         );
     }
 
@@ -42,14 +51,14 @@ class UserStatusServiceTest {
         User user = createUser(Role.TECHNICIAN);
         user.deactivate();
 
-        when(userRepository.findById(1L))
+        when(userRepository.findByIdForUpdate(1L))
                 .thenReturn(Optional.of(user));
 
         userService.activateUser(1L);
 
         assertThat(user.isActive()).isTrue();
 
-        verify(userRepository).findById(1L);
+        verify(userRepository).findByIdForUpdate(1L);
         verify(userRepository, never()).save(user);
         verifyNoInteractions(passwordEncoder);
     }
@@ -58,14 +67,14 @@ class UserStatusServiceTest {
     void shouldDeactivateActiveNonAdminUser() {
         User user = createUser(Role.REQUESTER);
 
-        when(userRepository.findById(2L))
+        when(userRepository.findByIdForUpdate(2L))
                 .thenReturn(Optional.of(user));
 
         userService.deactivateUser(2L);
 
         assertThat(user.isActive()).isFalse();
 
-        verify(userRepository).findById(2L);
+        verify(userRepository).findByIdForUpdate(2L);
         verify(userRepository, never())
                 .countByRoleAndActiveTrue(Role.ADMIN);
         verify(userRepository, never()).save(user);
@@ -76,7 +85,7 @@ class UserStatusServiceTest {
     void shouldDeactivateAdminWhenAnotherActiveAdminExists() {
         User administrator = createUser(Role.ADMIN);
 
-        when(userRepository.findById(3L))
+        when(userRepository.findByIdForUpdate(3L))
                 .thenReturn(Optional.of(administrator));
         when(userRepository.countByRoleAndActiveTrue(Role.ADMIN))
                 .thenReturn(2L);
@@ -95,7 +104,7 @@ class UserStatusServiceTest {
     void shouldRejectDeactivationOfLastActiveAdmin() {
         User administrator = createUser(Role.ADMIN);
 
-        when(userRepository.findById(4L))
+        when(userRepository.findByIdForUpdate(4L))
                 .thenReturn(Optional.of(administrator));
         when(userRepository.countByRoleAndActiveTrue(Role.ADMIN))
                 .thenReturn(1L);
@@ -121,7 +130,7 @@ class UserStatusServiceTest {
         User user = createUser(Role.ADMIN);
         user.deactivate();
 
-        when(userRepository.findById(5L))
+        when(userRepository.findByIdForUpdate(5L))
                 .thenReturn(Optional.of(user));
 
         userService.deactivateUser(5L);
@@ -136,7 +145,7 @@ class UserStatusServiceTest {
 
     @Test
     void shouldRejectStatusChangeForUnknownUser() {
-        when(userRepository.findById(99L))
+        when(userRepository.findByIdForUpdate(99L))
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(
@@ -145,10 +154,31 @@ class UserStatusServiceTest {
                 .isInstanceOf(UserNotFoundException.class)
                 .hasMessageContaining("99");
 
-        verify(userRepository).findById(99L);
+        verify(userRepository).findByIdForUpdate(99L);
         verify(userRepository, never())
                 .countByRoleAndActiveTrue(Role.ADMIN);
         verifyNoInteractions(passwordEncoder);
+    }
+
+    @Test
+    void shouldLockTechnicianBeforeCheckingOpenAssignmentsAndRejectDeactivation() {
+        User technician = createUser(Role.TECHNICIAN);
+        when(userRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(technician));
+        when(requestRepository.existsByAssignedTechnician_IdAndStatusIn(eq(7L), anyCollection())).thenReturn(true);
+        assertThatThrownBy(() -> userService.deactivateUser(7L)).isInstanceOf(TechnicianHasOpenRequestsException.class);
+        assertThat(technician.isActive()).isTrue();
+        var order = inOrder(userRepository, requestRepository);
+        order.verify(userRepository).findByIdForUpdate(7L);
+        order.verify(requestRepository).existsByAssignedTechnician_IdAndStatusIn(eq(7L), anyCollection());
+    }
+
+    @Test
+    void shouldDeactivateTechnicianWithoutOpenAssignments() {
+        User technician = createUser(Role.TECHNICIAN);
+        when(userRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(technician));
+        when(requestRepository.existsByAssignedTechnician_IdAndStatusIn(eq(7L), anyCollection())).thenReturn(false);
+        userService.deactivateUser(7L);
+        assertThat(technician.isActive()).isFalse();
     }
 
     private User createUser(Role role) {

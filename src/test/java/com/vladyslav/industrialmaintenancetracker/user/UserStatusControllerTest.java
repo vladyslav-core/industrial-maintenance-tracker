@@ -2,6 +2,7 @@ package com.vladyslav.industrialmaintenancetracker.user;
 
 import com.vladyslav.industrialmaintenancetracker.exception.LastActiveAdminException;
 import com.vladyslav.industrialmaintenancetracker.exception.UserNotFoundException;
+import com.vladyslav.industrialmaintenancetracker.exception.TechnicianHasOpenRequestsException;
 import com.vladyslav.industrialmaintenancetracker.security.SecurityConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -80,6 +81,16 @@ class UserStatusControllerTest {
                 ));
 
         verify(userService).deactivateUser(1L);
+    }
+
+    @Test
+    void shouldExplainWhyTechnicianWithOpenRequestsCannotBeDeactivated() throws Exception {
+        var exception = new TechnicianHasOpenRequestsException();
+        doThrow(exception).when(userService).deactivateUser(2L);
+        mockMvc.perform(post("/users/2/deactivate").with(csrf()))
+                .andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/users"))
+                .andExpect(flash().attribute("errorMessage", exception.getMessage()))
+                .andExpect(flash().attributeCount(1));
     }
 
     @Test

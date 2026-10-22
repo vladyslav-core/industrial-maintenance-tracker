@@ -7,6 +7,7 @@ import com.vladyslav.industrialmaintenancetracker.equipment.dto.EquipmentListIte
 import com.vladyslav.industrialmaintenancetracker.exception.DuplicateInventoryNumberException;
 import com.vladyslav.industrialmaintenancetracker.exception.EquipmentNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.exception.InvalidEquipmentStatusTransitionException;
+import com.vladyslav.industrialmaintenancetracker.exception.EquipmentHasOpenRequestsException;
 
 import jakarta.validation.Valid;
 import org.springframework.security.core.Authentication;
@@ -214,7 +215,7 @@ public class EquipmentController {
 
             return "redirect:/equipment";
         } catch (
-                InvalidEquipmentStatusTransitionException exception
+                InvalidEquipmentStatusTransitionException | EquipmentHasOpenRequestsException exception
         ) {
             redirectAttributes.addFlashAttribute(
                     "errorMessage",

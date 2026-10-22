@@ -5,6 +5,7 @@ import com.vladyslav.industrialmaintenancetracker.equipment.dto.EquipmentEditFor
 import com.vladyslav.industrialmaintenancetracker.exception.DuplicateInventoryNumberException;
 import com.vladyslav.industrialmaintenancetracker.exception.EquipmentNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.exception.InvalidEquipmentStatusTransitionException;
+import com.vladyslav.industrialmaintenancetracker.exception.EquipmentHasOpenRequestsException;
 import com.vladyslav.industrialmaintenancetracker.security.SecurityConfig;
 
 import org.junit.jupiter.api.Test;
@@ -210,6 +211,16 @@ class EquipmentWriteControllerTest {
                 7L,
                 EquipmentStatus.UNDER_REPAIR
         );
+    }
+
+    @Test
+    void shouldExplainWhyOpenRequestsPreventDecommissioning() throws Exception {
+        var exception = new EquipmentHasOpenRequestsException();
+        doThrow(exception).when(equipmentService).changeEquipmentStatus(7L, EquipmentStatus.DECOMMISSIONED);
+        mockMvc.perform(post("/equipment/7/status").with(csrf()).param("status", "DECOMMISSIONED"))
+                .andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/equipment/7"))
+                .andExpect(flash().attribute("errorMessage", exception.getMessage()))
+                .andExpect(flash().attributeCount(1));
     }
 
     @Test

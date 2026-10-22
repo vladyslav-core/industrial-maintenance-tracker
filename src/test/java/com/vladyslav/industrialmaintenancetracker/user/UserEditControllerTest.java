@@ -3,6 +3,7 @@ package com.vladyslav.industrialmaintenancetracker.user;
 import com.vladyslav.industrialmaintenancetracker.exception.DuplicateEmailException;
 import com.vladyslav.industrialmaintenancetracker.exception.LastActiveAdminException;
 import com.vladyslav.industrialmaintenancetracker.exception.UserNotFoundException;
+import com.vladyslav.industrialmaintenancetracker.exception.TechnicianHasOpenRequestsException;
 import com.vladyslav.industrialmaintenancetracker.security.SecurityConfig;
 import com.vladyslav.industrialmaintenancetracker.user.dto.UserEditForm;
 import org.junit.jupiter.api.Test;
@@ -157,6 +158,20 @@ class UserEditControllerTest {
                                 "A user with this email already exists."
                         )
                 ));
+    }
+
+    @Test
+    void shouldShowOpenAssignmentsAsRoleErrorAndPreserveSubmittedProfile() throws Exception {
+        doThrow(new TechnicianHasOpenRequestsException()).when(userService).updateUser(eq(2L), any(UserEditForm.class));
+        mockMvc.perform(post("/users/2/edit").with(csrf())
+                        .param("fullName", "Updated technician").param("email", "updated@example.com")
+                        .param("role", "REQUESTER"))
+                .andExpect(status().isOk()).andExpect(view().name("users/edit"))
+                .andExpect(model().attributeHasFieldErrors("userEditForm", "role"))
+                .andExpect(model().attribute("userId", 2L)).andExpect(model().attributeExists("roles"))
+                .andExpect(content().string(containsString("Updated technician")))
+                .andExpect(content().string(containsString("updated@example.com")))
+                .andExpect(content().string(containsString("open repair requests")));
     }
 
     @Test
