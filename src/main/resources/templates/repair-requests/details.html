@@ -97,6 +97,20 @@
             <button type="submit">Return for rework</button>
         </form>
     </section>
+    <section th:if="${request.canCancel}">
+        <h2>Cancel request</h2>
+        <p>Cancellation ends this request without adding a completed repair to maintenance history.</p>
+        <form method="post" th:action="@{/repair-requests/{id}/cancel(id=${request.id})}"
+              th:object="${cancellationForm}">
+            <input type="hidden" th:field="*{updatedAt}">
+            <p th:if="${#fields.hasErrors('updatedAt')}" th:errors="*{updatedAt}"></p>
+            <label for="cancellationReason">Cancellation reason (5–500 characters)</label>
+            <textarea id="cancellationReason" th:field="*{cancellationReason}"
+                      rows="4" minlength="5" maxlength="500" required></textarea>
+            <p th:if="${#fields.hasErrors('cancellationReason')}" th:errors="*{cancellationReason}"></p>
+            <button type="submit">Cancel request</button>
+        </form>
+    </section>
     <section th:if="${request.status.name() == 'CANCELLED'}">
         <h2>Cancellation reason</h2>
         <p style="white-space: pre-wrap" th:text="${request.cancellationReason}"></p>

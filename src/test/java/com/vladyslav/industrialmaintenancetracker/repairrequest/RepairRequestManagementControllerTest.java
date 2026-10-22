@@ -192,7 +192,7 @@ class RepairRequestManagementControllerTest {
         return new RepairRequestDetails(73L, "Oil leak in press", "Hydraulic oil leaking around the seal",
                 1L, "Press", "PRESS-001", "Workshop A", "Author", null,
                 RepairRequestPriority.HIGH, state, null, null, time, time, null, null, null, null,
-                false, manageable, manageable && state == RepairRequestStatus.ASSIGNED, false, false, false, false);
+                false, manageable, manageable && state == RepairRequestStatus.ASSIGNED, false, false, false, false, manageable);
     }
 
     private RequestPostProcessor currentUser(Role role) {

@@ -253,7 +253,7 @@ class RepairRequestWorkControllerTest {
                 RepairRequestPriority.HIGH, state, "Draft result marker <script>", null,
                 VERSION, VERSION, VERSION, null, null, null, false, false, false,
                 assignedTechnician && state == RepairRequestStatus.ASSIGNED,
-                assignedTechnician && state == RepairRequestStatus.IN_PROGRESS, false, false);
+                assignedTechnician && state == RepairRequestStatus.IN_PROGRESS, false, false, false);
     }
 
     private RequestPostProcessor currentUser(Role role) {

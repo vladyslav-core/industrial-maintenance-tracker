@@ -10,6 +10,7 @@ import com.vladyslav.industrialmaintenancetracker.exception.RepairRequestEditCon
 import com.vladyslav.industrialmaintenancetracker.exception.InvalidRepairRequestActionException;
 import com.vladyslav.industrialmaintenancetracker.exception.RepairRequestWorkConflictException;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestResolutionForm;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestCancellationForm;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestTechnicianOption;
 import com.vladyslav.industrialmaintenancetracker.exception.UserNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestCreateForm;
@@ -99,7 +100,8 @@ public class RepairRequestService {
                 isAssignedTechnician(request, viewer) && request.getStatus() == RepairRequestStatus.ASSIGNED,
                 isAssignedTechnician(request, viewer) && request.getStatus() == RepairRequestStatus.IN_PROGRESS,
                 viewer.getRole() == Role.ADMIN && request.getStatus() == RepairRequestStatus.COMPLETED,
-                viewer.getRole() == Role.ADMIN && request.getStatus() == RepairRequestStatus.COMPLETED
+                viewer.getRole() == Role.ADMIN && request.getStatus() == RepairRequestStatus.COMPLETED,
+                canCancel(request, viewer)
         );
     }
 
@@ -221,6 +223,29 @@ public class RepairRequestService {
         lockedRequest(requestId).changePriority(priority);
     }
 
+    @Transactional(readOnly = true)
+    public RepairRequestCancellationForm getCancellationForm(Long requestId, Long viewerId) {
+        User viewer = activeViewer(viewerId);
+        RepairRequest request = visibleRequest(requestId, viewer);
+        requireCancellable(request, viewer);
+        return new RepairRequestCancellationForm(null, request.getUpdatedAt());
+    }
+
+    @Transactional
+    public void cancelRequest(Long requestId, RepairRequestCancellationForm form, Long viewerId) {
+        User viewer = activeViewer(viewerId);
+        RepairRequest request = requestRepository.findVisibleByIdForUpdate(
+                requestId, viewer.getId(), viewer.getRole() == Role.ADMIN, viewer.getRole() == Role.TECHNICIAN
+        ).orElseThrow(() -> new RepairRequestNotFoundException(requestId));
+        requireCancellable(request, viewer);
+        if (form.getUpdatedAt() == null || !Objects.equals(request.getUpdatedAt(), form.getUpdatedAt())) {
+            throw new InvalidRepairRequestActionException(
+                    "The request has changed. Reload it before cancelling."
+            );
+        }
+        request.cancel(form.getCancellationReason(), Instant.now());
+    }
+
     @Transactional
     public void closeRequest(Long requestId, Instant expectedUpdatedAt, Long administratorId) {
         activeAdmin(administratorId);
@@ -292,7 +317,7 @@ public class RepairRequestService {
     }
 
     private RepairRequest lockedTechnicianRequest(Long requestId, User technician) {
-        RepairRequest request = requestRepository.findVisibleByIdForUpdate(requestId, technician.getId())
+        RepairRequest request = requestRepository.findVisibleByIdForUpdate(requestId, technician.getId(), false, true)
                 .orElseThrow(() -> new RepairRequestNotFoundException(requestId));
         requireAssignedTechnician(request, technician);
         return request;
@@ -352,6 +377,21 @@ public class RepairRequestService {
         return request.getCreatedBy().getId().equals(viewer.getId())
                 && request.getStatus() == RepairRequestStatus.NEW
                 && request.getAssignedTechnician() == null;
+    }
+
+    private boolean canCancel(RepairRequest request, User viewer) {
+        return (viewer.getRole() == Role.ADMIN && manageable(request)) || canEdit(request, viewer);
+    }
+
+    private void requireCancellable(RepairRequest request, User viewer) {
+        if (viewer.getRole() != Role.ADMIN && !request.getCreatedBy().getId().equals(viewer.getId())) {
+            throw new AccessDeniedException("Only the author or an administrator can cancel a request");
+        }
+        if (!canCancel(request, viewer)) {
+            throw new InvalidRepairRequestActionException(
+                    "Authors can cancel only their own NEW request. Administrators can cancel NEW, ASSIGNED or IN_PROGRESS requests."
+            );
+        }
     }
 
     private void requireEditable(RepairRequest request, User viewer) {

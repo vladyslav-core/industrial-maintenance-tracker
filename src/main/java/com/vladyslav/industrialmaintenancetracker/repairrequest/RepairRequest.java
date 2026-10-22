@@ -160,6 +160,23 @@ public class RepairRequest {
         status = RepairRequestStatus.COMPLETED;
     }
 
+    public void cancel(String cancellationReason, Instant closedAt) {
+        if (status != RepairRequestStatus.NEW && status != RepairRequestStatus.ASSIGNED
+                && status != RepairRequestStatus.IN_PROGRESS) {
+            throw new InvalidRepairRequestActionException(
+                    "Only NEW, ASSIGNED or IN_PROGRESS requests can be cancelled."
+            );
+        }
+        String reason = cancellationReason == null ? null : cancellationReason.trim();
+        if (reason == null || reason.isBlank() || reason.length() < 5 || reason.length() > 500) {
+            throw new InvalidRepairRequestActionException("The cancellation reason must contain 5 to 500 characters.");
+        }
+        Objects.requireNonNull(closedAt, "Cancellation time must not be null");
+        this.cancellationReason = reason;
+        this.closedAt = closedAt;
+        status = RepairRequestStatus.CANCELLED;
+    }
+
     public void close(Instant closedAt) {
         if (status != RepairRequestStatus.COMPLETED) {
             throw new InvalidRepairRequestActionException("Only a COMPLETED repair can be closed.");

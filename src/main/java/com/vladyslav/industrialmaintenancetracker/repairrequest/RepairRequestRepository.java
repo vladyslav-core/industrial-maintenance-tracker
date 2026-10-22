@@ -21,9 +21,15 @@ public interface RepairRequestRepository extends JpaRepository<RepairRequest, Lo
     @Query("""
             SELECT request FROM RepairRequest request
             WHERE request.id = :id
-              AND (request.createdBy.id = :viewerId OR request.assignedTechnician.id = :viewerId)
+              AND (:admin = true OR request.createdBy.id = :viewerId
+                   OR (:technician = true AND request.assignedTechnician.id = :viewerId))
             """)
-    Optional<RepairRequest> findVisibleByIdForUpdate(@Param("id") Long id, @Param("viewerId") Long viewerId);
+    Optional<RepairRequest> findVisibleByIdForUpdate(
+            @Param("id") Long id,
+            @Param("viewerId") Long viewerId,
+            @Param("admin") boolean admin,
+            @Param("technician") boolean technician
+    );
 
     @Query("""
             SELECT request FROM RepairRequest request

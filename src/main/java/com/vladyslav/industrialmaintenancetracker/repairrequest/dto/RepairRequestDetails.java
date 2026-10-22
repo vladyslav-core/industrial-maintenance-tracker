@@ -31,6 +31,7 @@ public record RepairRequestDetails(
         boolean canStart,
         boolean canWork,
         boolean canReturn,
-        boolean canClose
+        boolean canClose,
+        boolean canCancel
 ) {
 }

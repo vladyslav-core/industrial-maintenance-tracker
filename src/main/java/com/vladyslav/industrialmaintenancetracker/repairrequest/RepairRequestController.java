@@ -7,6 +7,7 @@ import com.vladyslav.industrialmaintenancetracker.exception.RepairRequestEditCon
 import com.vladyslav.industrialmaintenancetracker.exception.InvalidRepairRequestActionException;
 import com.vladyslav.industrialmaintenancetracker.exception.RepairRequestWorkConflictException;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestResolutionForm;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestCancellationForm;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestDetails;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestCreateForm;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestEditForm;
@@ -69,11 +70,36 @@ public class RepairRequestController {
     ) {
         RepairRequestDetails request = requestService.getDetails(requestId, currentUser.getUserId());
         model.addAttribute("request", request);
+        if (request.canCancel() && !model.containsAttribute("cancellationForm")) {
+            model.addAttribute("cancellationForm", new RepairRequestCancellationForm(null, request.updatedAt()));
+        }
         if (request.canManage()) {
             model.addAttribute("technicianOptions", requestService.availableTechnicians(currentUser.getUserId()));
             model.addAttribute("priorities", RepairRequestPriority.values());
         }
         return "repair-requests/details";
+    }
+
+    @PostMapping("/{requestId}/cancel")
+    public String cancelRequest(
+            @PathVariable Long requestId,
+            @Valid @ModelAttribute("cancellationForm") RepairRequestCancellationForm form,
+            BindingResult bindingResult,
+            @AuthenticationPrincipal CustomUserDetails currentUser,
+            Model model,
+            RedirectAttributes redirectAttributes
+    ) {
+        try {
+            if (bindingResult.hasErrors()) {
+                requestService.getCancellationForm(requestId, currentUser.getUserId());
+                return details(requestId, currentUser, model);
+            }
+            requestService.cancelRequest(requestId, form, currentUser.getUserId());
+            redirectAttributes.addFlashAttribute("successMessage", "Request cancelled.");
+        } catch (InvalidRepairRequestActionException exception) {
+            redirectAttributes.addFlashAttribute("errorMessage", exception.getMessage());
+        }
+        return "redirect:/repair-requests/" + requestId;
     }
 
     @PostMapping("/{requestId}/assign")
