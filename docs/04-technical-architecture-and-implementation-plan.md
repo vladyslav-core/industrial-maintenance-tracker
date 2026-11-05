@@ -522,7 +522,7 @@ Service → Model
 
 JPA Entity не используется как универсальный объект HTML-формы.
 
-Примерные Form DTO:
+Основные Form DTO и параметры фильтрации:
 
 ```text
 UserCreateForm
@@ -531,13 +531,12 @@ EquipmentCreateForm
 EquipmentEditForm
 RepairRequestCreateForm
 RepairRequestEditForm
-RepairRequestAssignForm
-RepairRequestPriorityForm
 RepairRequestResolutionForm
-RepairRequestCompleteForm
 RepairRequestCancellationForm
-RepairRequestFilter
+RepairRequestFilters
 ```
+
+В этапе 08 один `RepairRequestResolutionForm` используется для черновика и завершения работы. Назначение, изменение приоритета, возврат и закрытие принимают отдельные типизированные параметры, без привязки HTML-формы к Entity.
 
 Схема:
 
@@ -1236,8 +1235,8 @@ feat: add repair request editing and filters
 Создать отдельные операции:
 
 ```text
-assignTechnician(...)
-unassignTechnician(...)
+assign(...)
+unassign(...)
 changePriority(...)
 ```
 
@@ -1268,7 +1267,7 @@ feat: add repair request work start
 Создать:
 
 - сохранение черновика `resolution` назначенным техником в `IN_PROGRESS`;
-- RepairRequestCompleteForm;
+- `RepairRequestResolutionForm` для сохранения черновика и завершения работы;
 - переход `IN_PROGRESS → COMPLETED` только с заполненным `resolution`;
 - возврат `COMPLETED → IN_PROGRESS` только ADMIN;
 - при возврате очищать `completedAt`, сохранять `resolution` для исправления.
@@ -1298,7 +1297,7 @@ feat: allow completed requests to return to work
 7. создаёт MaintenanceRecord;
 8. сохраняет всё атомарно.
 
-`MaintenanceRecord` копирует оборудование, текущего техника, `resolution` и `completedAt` из заявки. Одна запись на одну заявку; повторное закрытие запрещено. UI истории в этот шаг не входит.
+`MaintenanceRecord` копирует оборудование, текущего техника, `resolution` и `completedAt` из заявки. Одна запись на одну заявку. Повторная отправка закрытия администратором не создаёт дубликат и не меняет первоначальное время закрытия. UI истории в этот шаг не входит.
 
 ```text
 feat: close repair requests with maintenance record
