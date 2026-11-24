@@ -100,6 +100,8 @@
             and equipment.status.name() == 'DECOMMISSIONED'}">
         Decommissioned equipment cannot be returned to service.
     </p>
+
+    <section th:replace="~{maintenance/history :: history(${maintenanceHistory}, false)}"></section>
 </main>
 </body>
 </html>

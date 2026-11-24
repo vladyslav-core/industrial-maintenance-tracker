@@ -1,16 +1,18 @@
 package com.vladyslav.industrialmaintenancetracker.equipment;
 
 import com.vladyslav.industrialmaintenancetracker.equipment.dto.EquipmentCreateForm;
-import com.vladyslav.industrialmaintenancetracker.equipment.dto.EquipmentDetails;
+import com.vladyslav.industrialmaintenancetracker.equipment.dto.EquipmentDetailsPage;
 import com.vladyslav.industrialmaintenancetracker.equipment.dto.EquipmentEditForm;
 import com.vladyslav.industrialmaintenancetracker.equipment.dto.EquipmentListItem;
 import com.vladyslav.industrialmaintenancetracker.exception.DuplicateInventoryNumberException;
 import com.vladyslav.industrialmaintenancetracker.exception.EquipmentNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.exception.InvalidEquipmentStatusTransitionException;
 import com.vladyslav.industrialmaintenancetracker.exception.EquipmentHasOpenRequestsException;
+import com.vladyslav.industrialmaintenancetracker.security.CustomUserDetails;
 
 import jakarta.validation.Valid;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
@@ -29,9 +31,14 @@ import java.util.List;
 public class EquipmentController {
 
     private final EquipmentService equipmentService;
+    private final EquipmentDetailsService equipmentDetailsService;
 
-    public EquipmentController(EquipmentService equipmentService) {
+    public EquipmentController(
+            EquipmentService equipmentService,
+            EquipmentDetailsService equipmentDetailsService
+    ) {
         this.equipmentService = equipmentService;
+        this.equipmentDetailsService = equipmentDetailsService;
     }
 
     @GetMapping
@@ -54,14 +61,17 @@ public class EquipmentController {
     @GetMapping("/{equipmentId}")
     public String showEquipmentDetails(
             @PathVariable Long equipmentId,
+            @AuthenticationPrincipal CustomUserDetails currentUser,
             Model model,
             RedirectAttributes redirectAttributes
     ) {
         try {
-            EquipmentDetails equipment =
-                    equipmentService.getEquipmentDetails(equipmentId);
+            EquipmentDetailsPage page = equipmentDetailsService.getDetailsPage(
+                    equipmentId, currentUser.getUserId()
+            );
 
-            model.addAttribute("equipment", equipment);
+            model.addAttribute("equipment", page.equipment());
+            model.addAttribute("maintenanceHistory", page.maintenanceHistory());
             model.addAttribute(
                     "statuses",
                     EquipmentStatus.values()

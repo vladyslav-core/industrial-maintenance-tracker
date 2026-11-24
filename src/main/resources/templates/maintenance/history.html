@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<section th:fragment="history(items, showEquipment)">
+    <h2>Maintenance history</h2>
+
+    <p th:if="${#lists.isEmpty(items)}">No maintenance records found.</p>
+
+    <article th:each="item : ${items}">
+        <h3>
+            Request
+            <a th:if="${item.canViewRequest}"
+               th:href="@{/repair-requests/{id}(id=${item.requestId})}"
+               th:text="${'#' + item.requestId}"></a>
+            <span th:unless="${item.canViewRequest}" th:text="${'#' + item.requestId}"></span>
+            <span th:text="${item.requestTitle}"></span>
+        </h3>
+
+        <dl th:if="${showEquipment}">
+            <dt>Equipment</dt>
+            <dd>
+                <a th:href="@{/equipment/{id}(id=${item.equipmentId})}"
+                   th:text="${item.equipmentName + ' (' + item.inventoryNumber + ')'}"></a>
+            </dd>
+        </dl>
+
+        <dl>
+            <dt>Request created</dt>
+            <dd th:text="${item.requestCreatedAt}"></dd>
+
+            <dt>Author</dt>
+            <dd th:text="${item.authorName}"></dd>
+
+            <dt>Problem description</dt>
+            <dd style="white-space: pre-wrap" th:text="${item.requestDescription}"></dd>
+
+            <dt>Technician</dt>
+            <dd th:text="${item.technicianName}"></dd>
+
+            <dt>Repair result</dt>
+            <dd style="white-space: pre-wrap" th:text="${item.workDescription}"></dd>
+
+            <dt>Completed by technician</dt>
+            <dd th:text="${item.performedAt}"></dd>
+
+            <dt>Closed</dt>
+            <dd th:text="${item.closedAt}"></dd>
+        </dl>
+    </article>
+</section>
+</body>
+</html>

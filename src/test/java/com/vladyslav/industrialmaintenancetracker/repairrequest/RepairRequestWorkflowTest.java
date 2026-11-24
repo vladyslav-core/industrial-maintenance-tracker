@@ -317,6 +317,8 @@ class RepairRequestWorkflowTest {
         mvc.perform(securedPost(Actor.ADMIN, "/users/" + userIds.get(Actor.AUTHOR) + "/deactivate"))
                 .andExpect(status().is3xxRedirection()).andExpect(flash().attributeExists("successMessage"));
         mvc.perform(get("/repair-requests").session(login(Actor.AUTHOR))).andExpect(status().isForbidden());
+        mvc.perform(get("/equipment/" + equipmentId).session(login(Actor.AUTHOR)))
+                .andExpect(status().isForbidden());
         mvc.perform(validPost(Action.CREATE, null, Actor.AUTHOR).param("_csrf", csrf(Actor.AUTHOR)))
                 .andExpect(status().isForbidden());
         assertThat(requests.count()).isEqualTo(1);
@@ -381,6 +383,68 @@ class RepairRequestWorkflowTest {
         assertThat(maintenance.count()).isEqualTo(1);
         assertThat(equipment.findById(equipmentId).orElseThrow().getStatus()).isEqualTo(EquipmentStatus.DECOMMISSIONED);
         assertThat(users.findById(userIds.get(Actor.TECHNICIAN)).orElseThrow().isActive()).isFalse();
+
+        for (Actor viewer : List.of(Actor.ADMIN, Actor.AUTHOR, Actor.OTHER_TECHNICIAN)) {
+            assertThat(open(viewer, "/equipment/" + equipmentId))
+                    .contains("Maintenance history", "Workflow TECHNICIAN", "DECOMMISSIONED",
+                            "Seal replaced. Pressure test passed. &lt;script&gt;result&lt;/script&gt;");
+        }
+        mvc.perform(get("/equipment/" + equipmentId).session(login(Actor.TECHNICIAN)))
+                .andExpect(status().isForbidden());
+    }
+
+    @ParameterizedTest
+    @EnumSource(Actor.class)
+    void equipmentHistoryShowsTheAcceptedRepairWithoutExpandingRequestAccess(Actor actor) throws Exception {
+        Long id = prepare(RepairRequestStatus.COMPLETED);
+        succeed(Action.CLOSE, id);
+        var closed = current(id);
+
+        String html = open(actor, "/equipment/" + equipmentId
+                + "?viewerId=" + userIds.get(Actor.ADMIN) + "&admin=true");
+        assertThat(html).contains(
+                "Maintenance history", "#" + id, closed.title(), closed.authorName(),
+                closed.description(), closed.technicianName(), closed.createdAt().toString(),
+                closed.completedAt().toString(), closed.closedAt().toString(),
+                "Seal replaced. Pressure test passed. &lt;script&gt;result&lt;/script&gt;"
+        ).doesNotContain("<script>result</script>");
+
+        boolean canView = actor == Actor.ADMIN || actor == Actor.AUTHOR || actor == Actor.TECHNICIAN;
+        assertThat(listIds(html)).isEqualTo(canView ? Set.of(id) : Set.of());
+        mvc.perform(get(card(id)).session(login(actor)))
+                .andExpect(status().is(canView ? 200 : 404));
+        assertThat(maintenance.count()).isEqualTo(1);
+    }
+
+    @Test
+    void equipmentHistoryAppearsOnlyAfterAcceptanceAndExcludesCancelledRequests() throws Exception {
+        Long completed = prepare(RepairRequestStatus.COMPLETED);
+        Long cancelled = create(Actor.AUTHOR);
+        succeed(Action.CANCEL, cancelled);
+
+        assertThat(open(Actor.AUTHOR, "/equipment/" + equipmentId))
+                .contains("No maintenance records found.")
+                .doesNotContain("Seal replaced.", "#" + completed, "#" + cancelled);
+
+        succeed(Action.CLOSE, completed);
+        String history = open(Actor.AUTHOR, "/equipment/" + equipmentId);
+        assertThat(listIds(history)).containsExactly(completed);
+        assertThat(history).doesNotContain("No maintenance records found.", "#" + cancelled);
+        assertThat(open(Actor.AUTHOR, "/equipment/" + otherEquipmentId))
+                .contains("No maintenance records found.").doesNotContain("#" + completed);
+    }
+
+    @Test
+    void currentDatabaseRoleControlsHistoryLinksForAnExistingTechnicianSession() throws Exception {
+        Long id = prepare(RepairRequestStatus.COMPLETED);
+        succeed(Action.CLOSE, id);
+        // Work already authenticated this technician before the database role changes.
+        jdbc.update("UPDATE users SET role = 'REQUESTER' WHERE id = ?", userIds.get(Actor.TECHNICIAN));
+
+        String html = open(Actor.TECHNICIAN, "/equipment/" + equipmentId);
+        assertThat(html).contains("#" + id, "Seal replaced. Pressure test passed.");
+        assertThat(listIds(html)).isEmpty();
+        mvc.perform(get(card(id)).session(login(Actor.TECHNICIAN))).andExpect(status().isNotFound());
     }
 
     private enum Actor {

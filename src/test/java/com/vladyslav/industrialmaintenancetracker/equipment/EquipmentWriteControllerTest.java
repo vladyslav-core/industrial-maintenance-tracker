@@ -43,6 +43,9 @@ class EquipmentWriteControllerTest {
     @MockitoBean
     private EquipmentService equipmentService;
 
+    @MockitoBean
+    private EquipmentDetailsService equipmentDetailsService;
+
     @Test
     void shouldShowCreateFormToAdmin() throws Exception {
         mockMvc.perform(get("/equipment/new"))

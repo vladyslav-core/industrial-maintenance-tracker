@@ -1,25 +1,39 @@
 package com.vladyslav.industrialmaintenancetracker.equipment;
 
 import com.vladyslav.industrialmaintenancetracker.equipment.dto.EquipmentDetails;
+import com.vladyslav.industrialmaintenancetracker.equipment.dto.EquipmentDetailsPage;
 import com.vladyslav.industrialmaintenancetracker.equipment.dto.EquipmentListItem;
 import com.vladyslav.industrialmaintenancetracker.exception.EquipmentNotFoundException;
+import com.vladyslav.industrialmaintenancetracker.maintenance.dto.MaintenanceHistoryItem;
+import com.vladyslav.industrialmaintenancetracker.security.CustomUserDetails;
 import com.vladyslav.industrialmaintenancetracker.security.SecurityConfig;
+import com.vladyslav.industrialmaintenancetracker.user.Role;
+import com.vladyslav.industrialmaintenancetracker.user.User;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.util.List;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.flash;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.model;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
@@ -35,6 +49,9 @@ class EquipmentReadControllerTest {
 
     @MockitoBean
     private EquipmentService equipmentService;
+
+    @MockitoBean
+    private EquipmentDetailsService equipmentDetailsService;
 
     @Test
     @WithMockUser(roles = "TECHNICIAN")
@@ -81,9 +98,9 @@ class EquipmentReadControllerTest {
         );
     }
 
-    @Test
-    @WithMockUser(roles = "REQUESTER")
-    void shouldShowEquipmentDetailsToRequester()
+    @ParameterizedTest
+    @EnumSource(Role.class)
+    void shouldShowEmptyEquipmentHistoryToEveryRole(Role role)
             throws Exception {
         EquipmentDetails details = new EquipmentDetails(
                 7L,
@@ -96,10 +113,10 @@ class EquipmentReadControllerTest {
                 Instant.parse("2026-09-21T11:00:00Z")
         );
 
-        when(equipmentService.getEquipmentDetails(7L))
-                .thenReturn(details);
+        when(equipmentDetailsService.getDetailsPage(7L, 42L))
+                .thenReturn(new EquipmentDetailsPage(details, List.of()));
 
-        mockMvc.perform(get("/equipment/7"))
+        mockMvc.perform(get("/equipment/7").with(currentUser(role)))
                 .andExpect(status().isOk())
                 .andExpect(view().name("equipment/details"))
                 .andExpect(model().attribute(
@@ -107,12 +124,15 @@ class EquipmentReadControllerTest {
                         details
                 ))
                 .andExpect(model().attributeExists("statuses"))
+                .andExpect(model().attribute("maintenanceHistory", List.of()))
+                .andExpect(content().string(containsString("Maintenance history")))
+                .andExpect(content().string(containsString("No maintenance records found.")))
                 .andExpect(model().attribute(
                         "canManageEquipment",
-                        false
+                        role == Role.ADMIN
                 ));
 
-        verify(equipmentService).getEquipmentDetails(7L);
+        verify(equipmentDetailsService).getDetailsPage(7L, 42L);
     }
 
     @Test
@@ -131,15 +151,15 @@ class EquipmentReadControllerTest {
                 ));
     }
 
-    @Test
-    @WithMockUser(roles = "ADMIN")
-    void shouldRedirectWhenEquipmentDoesNotExist()
+    @ParameterizedTest
+    @EnumSource(Role.class)
+    void shouldRedirectWhenEquipmentDoesNotExist(Role role)
             throws Exception {
         doThrow(new EquipmentNotFoundException(99L))
-                .when(equipmentService)
-                .getEquipmentDetails(99L);
+                .when(equipmentDetailsService)
+                .getDetailsPage(99L, 42L);
 
-        mockMvc.perform(get("/equipment/99"))
+        mockMvc.perform(get("/equipment/99").with(currentUser(role)))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(redirectedUrl("/equipment"))
                 .andExpect(flash().attributeExists("errorMessage"));
@@ -156,6 +176,55 @@ class EquipmentReadControllerTest {
     }
 
     @Test
+    void shouldRequireAuthenticationForEquipmentDetails() throws Exception {
+        mockMvc.perform(get("/equipment/7"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/login"));
+        verifyNoInteractions(equipmentService, equipmentDetailsService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void shouldRenderOnlyPermittedRequestLinksUsingAuthenticatedIdentity(boolean canViewRequest) throws Exception {
+        var item = historyItem(canViewRequest, "Seal replaced. Pressure test passed.");
+        when(equipmentDetailsService.getDetailsPage(7L, 42L))
+                .thenReturn(new EquipmentDetailsPage(details(), List.of(item)));
+
+        var response = mockMvc.perform(get("/equipment/7").with(currentUser(Role.REQUESTER))
+                        .param("viewerId", "99").param("admin", "true"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("#73")))
+                .andExpect(content().string(containsString("Oil leak in press")))
+                .andExpect(content().string(containsString("History Author")))
+                .andExpect(content().string(containsString("History Technician")))
+                .andExpect(content().string(containsString("2026-11-01T07:00:00Z")))
+                .andExpect(content().string(containsString("2026-11-02T08:00:00Z")))
+                .andExpect(content().string(containsString("2026-11-03T09:00:00Z")));
+
+        String link = "href=\"/repair-requests/73\"";
+        if (canViewRequest) {
+            response.andExpect(content().string(containsString(link)));
+        } else {
+            response.andExpect(content().string(not(containsString(link))));
+        }
+        verify(equipmentDetailsService).getDetailsPage(7L, 42L);
+    }
+
+    @Test
+    void shouldEscapeHistoryTextAndPreserveLineBreaks() throws Exception {
+        var item = historyItem(false, "Seal replaced.\n<script>alert(1)</script>");
+        when(equipmentDetailsService.getDetailsPage(7L, 42L))
+                .thenReturn(new EquipmentDetailsPage(details(), List.of(item)));
+
+        mockMvc.perform(get("/equipment/7").with(currentUser(Role.REQUESTER)))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Oil &lt;leak&gt; around the seal")))
+                .andExpect(content().string(containsString("Seal replaced.\n&lt;script&gt;alert(1)&lt;/script&gt;")))
+                .andExpect(content().string(not(containsString("<script>"))))
+                .andExpect(content().string(containsString("white-space: pre-wrap")));
+    }
+
+    @Test
     @WithMockUser(roles = "TECHNICIAN")
     void shouldDenyCreatePageToTechnician()
             throws Exception {
@@ -163,5 +232,26 @@ class EquipmentReadControllerTest {
                 .andExpect(status().isForbidden());
 
         verifyNoInteractions(equipmentService);
+    }
+
+    private EquipmentDetails details() {
+        return new EquipmentDetails(7L, "Hydraulic press", "PRESS-001", null, "Workshop A",
+                EquipmentStatus.OPERATIONAL, Instant.parse("2026-09-21T10:00:00Z"),
+                Instant.parse("2026-09-21T11:00:00Z"));
+    }
+
+    private MaintenanceHistoryItem historyItem(boolean canViewRequest, String workDescription) {
+        return new MaintenanceHistoryItem(
+                5L, 7L, "Hydraulic press", "PRESS-001", 73L, "Oil leak in press",
+                Instant.parse("2026-11-01T07:00:00Z"), "History Author", "Oil <leak> around the seal",
+                "History Technician", workDescription, Instant.parse("2026-11-02T08:00:00Z"),
+                Instant.parse("2026-11-03T09:00:00Z"), canViewRequest
+        );
+    }
+
+    private RequestPostProcessor currentUser(Role role) {
+        User account = new User("Test User", "user@example.com", "hashed-password", role);
+        ReflectionTestUtils.setField(account, "id", 42L);
+        return user(new CustomUserDetails(account));
     }
 }
