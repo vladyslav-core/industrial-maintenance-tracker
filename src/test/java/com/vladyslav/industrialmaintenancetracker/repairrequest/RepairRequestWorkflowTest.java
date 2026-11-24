@@ -148,6 +148,11 @@ class RepairRequestWorkflowTest {
         assertThat(maintenance.count()).isZero();
         assertThat(open(Actor.AUTHOR, card(id))).contains("&lt;script&gt;result&lt;/script&gt;")
                 .doesNotContain("<script>result</script>");
+        String completedEquipment = open(Actor.AUTHOR, "/equipment/" + equipmentId);
+        assertThat(listIds(section(completedEquipment, "open-repair-requests"))).containsExactly(id);
+        assertThat(section(completedEquipment, "maintenance-history")).contains("No maintenance records found.");
+        assertThat(section(open(Actor.ADMIN, "/maintenance-history"), "maintenance-history"))
+                .contains("No maintenance records found.");
 
         String originalReview = open(Actor.ADMIN, card(id));
         mvc.perform(versionedPost(Actor.ADMIN, card(id) + "/return", originalReview))
@@ -169,6 +174,8 @@ class RepairRequestWorkflowTest {
                 .andExpect(status().is3xxRedirection()).andExpect(flash().attributeExists("errorMessage"));
         assertThat(current(id).status()).isEqualTo(RepairRequestStatus.COMPLETED);
         assertThat(maintenance.count()).isZero();
+        assertThat(section(open(Actor.OTHER_TECHNICIAN, "/maintenance-history?equipmentId=" + equipmentId),
+                "maintenance-history")).contains("No maintenance records found.");
 
         String finalReview = open(Actor.ADMIN, card(id));
         mvc.perform(versionedPost(Actor.ADMIN, card(id) + "/close", finalReview))
@@ -188,6 +195,37 @@ class RepairRequestWorkflowTest {
         assertThat(maintenance.findByRepairRequestId(id).orElseThrow().getId()).isEqualTo(history.getId());
         assertThat(open(Actor.ADMIN, card(id))).doesNotContain(card(id) + "/close").doesNotContain(card(id) + "/return");
         assertThat(current(id).priority()).isEqualTo(RepairRequestPriority.HIGH);
+
+        var beforeReading = maintenanceReads.getHistory(null, userIds.get(Actor.ADMIN));
+        for (Actor actor : Actor.values()) {
+            String equipmentHtml = open(actor, "/equipment/" + equipmentId);
+            assertThat(section(equipmentHtml, "open-repair-requests")).contains("No open repair requests.");
+            String equipmentHistory = section(equipmentHtml, "maintenance-history");
+            assertThat(equipmentHistory).containsOnlyOnce("<article>")
+                    .contains("#" + id, closed.title(), closed.description(), closed.authorName(),
+                            CORRECTION, "Workflow OTHER_TECHNICIAN", closed.createdAt().toString(),
+                            reviewed.completedAt().toString(), closed.closedAt().toString())
+                    .doesNotContain("Seal replaced.", "Draft marker", "Workflow TECHNICIAN", firstCompletion.toString());
+
+            boolean canViewRequest = actor == Actor.ADMIN || actor == Actor.AUTHOR || actor == Actor.OTHER_TECHNICIAN;
+            assertThat(listIds(equipmentHistory)).isEqualTo(canViewRequest ? Set.of(id) : Set.of());
+            mvc.perform(get(card(id)).session(login(actor))).andExpect(status().is(canViewRequest ? 200 : 404));
+
+            if (actor.role == Role.ADMIN || actor.role == Role.TECHNICIAN) {
+                for (String path : List.of("/maintenance-history", "/maintenance-history?equipmentId=" + equipmentId)) {
+                    String generalHistory = section(open(actor, path), "maintenance-history");
+                    assertThat(generalHistory).containsOnlyOnce("<article>")
+                            .contains(CORRECTION, "Workflow OTHER_TECHNICIAN", closed.createdAt().toString(),
+                                    reviewed.completedAt().toString(), closed.closedAt().toString())
+                            .doesNotContain("Seal replaced.", "Draft marker", "Workflow TECHNICIAN", firstCompletion.toString());
+                    assertThat(listIds(generalHistory)).isEqualTo(canViewRequest ? Set.of(id) : Set.of());
+                }
+            }
+        }
+        assertThat(maintenanceReads.getHistory(null, userIds.get(Actor.ADMIN))).isEqualTo(beforeReading);
+        assertThat(maintenance.count()).isEqualTo(1);
+        assertThat(maintenance.findByRepairRequestId(id).orElseThrow().getId()).isEqualTo(history.getId());
+        assertThat(current(id)).isEqualTo(closed);
     }
 
     @ParameterizedTest
