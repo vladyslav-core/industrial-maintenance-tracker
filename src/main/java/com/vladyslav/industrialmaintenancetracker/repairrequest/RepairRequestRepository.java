@@ -110,6 +110,26 @@ public interface RepairRequestRepository extends JpaRepository<RepairRequest, Lo
             SELECT request FROM RepairRequest request
             JOIN FETCH request.equipment
             JOIN FETCH request.createdBy
+            LEFT JOIN FETCH request.assignedTechnician assigned
+            WHERE request.equipment.id = :equipmentId
+              AND request.status IN :statuses
+              AND (:admin = true
+                   OR request.createdBy.id = :viewerId
+                   OR (:technician = true AND assigned.id = :viewerId))
+            ORDER BY request.createdAt DESC, request.id DESC
+            """)
+    List<RepairRequest> findVisibleOpenByEquipment(
+            @Param("equipmentId") Long equipmentId,
+            @Param("viewerId") Long viewerId,
+            @Param("admin") boolean admin,
+            @Param("technician") boolean technician,
+            @Param("statuses") Collection<RepairRequestStatus> statuses
+    );
+
+    @Query("""
+            SELECT request FROM RepairRequest request
+            JOIN FETCH request.equipment
+            JOIN FETCH request.createdBy
             LEFT JOIN FETCH request.assignedTechnician
             WHERE request.id = :id
               AND (:admin = true

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <body>
-<section th:fragment="history(items, showEquipment)">
+<section id="maintenance-history" th:fragment="history(items, showEquipment)">
     <h2>Maintenance history</h2>
 
     <p th:if="${#lists.isEmpty(items)}">No maintenance records found.</p>

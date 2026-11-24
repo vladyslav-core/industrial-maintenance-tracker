@@ -3,6 +3,8 @@ package com.vladyslav.industrialmaintenancetracker.repairrequest;
 import com.vladyslav.industrialmaintenancetracker.equipment.Equipment;
 import com.vladyslav.industrialmaintenancetracker.equipment.EquipmentRepository;
 import com.vladyslav.industrialmaintenancetracker.exception.RepairRequestNotFoundException;
+import com.vladyslav.industrialmaintenancetracker.exception.EquipmentNotFoundException;
+import com.vladyslav.industrialmaintenancetracker.maintenance.MaintenanceRecord;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestDetails;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestListItem;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestFilters;
@@ -23,6 +25,9 @@ import org.springframework.security.access.AccessDeniedException;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+
+import java.time.Instant;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -149,6 +154,87 @@ class RepairRequestReadTest {
                 .isInstanceOf(AccessDeniedException.class);
         assertThatThrownBy(() -> service.getDetails(ownNew, requester.getId()))
                 .isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> service.getEquipmentOpenRequests(equipment.getId(), requester.getId()))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @ParameterizedTest
+    @EnumSource(Role.class)
+    void equipmentOpenRequestsRespectVisibilityAndStableOrder(Role role) {
+        Long viewer = switch (role) {
+            case ADMIN -> admin.getId();
+            case TECHNICIAN -> technician.getId();
+            case REQUESTER -> requester.getId();
+        };
+        List<Long> expected = switch (role) {
+            case ADMIN -> List.of(foreignRequest, technicianSelfAssigned, technicianOwn,
+                    ownAssigned, ownNew, adminOwn);
+            case TECHNICIAN -> List.of(technicianSelfAssigned, technicianOwn, ownAssigned);
+            case REQUESTER -> List.of(ownAssigned, ownNew);
+        };
+
+        assertThat(service.getEquipmentOpenRequests(equipment.getId(), viewer))
+                .extracting(RepairRequestListItem::id).containsExactlyElementsOf(expected);
+    }
+
+    @ParameterizedTest
+    @EnumSource(RepairRequestStatus.class)
+    void equipmentOpenRequestsIncludeExactlyTheFourNonFinalStatuses(RepairRequestStatus state) {
+        RepairRequest request = requests.findById(ownAssigned).orElseThrow();
+        Instant now = Instant.now();
+        switch (state) {
+            case NEW -> request.unassign();
+            case ASSIGNED -> { }
+            case IN_PROGRESS -> request.startWork(now);
+            case COMPLETED -> {
+                request.startWork(now);
+                request.completeWork("Seal replaced and pressure checked", now.plusSeconds(1));
+            }
+            case CLOSED -> {
+                request.startWork(now);
+                request.completeWork("Seal replaced and pressure checked", now.plusSeconds(1));
+                request.close(now.plusSeconds(2));
+                requests.flush();
+                entityManager.persist(new MaintenanceRecord(request));
+            }
+            case CANCELLED -> request.cancel("Duplicate problem report", now);
+        }
+        requests.flush();
+        entityManager.clear();
+
+        List<Long> expected = state == RepairRequestStatus.CLOSED || state == RepairRequestStatus.CANCELLED
+                ? List.of(ownNew) : List.of(ownAssigned, ownNew);
+        assertThat(service.getEquipmentOpenRequests(equipment.getId(), requester.getId()))
+                .extracting(RepairRequestListItem::id).containsExactlyElementsOf(expected);
+    }
+
+    @Test
+    void equipmentOpenRequestsAreRestrictedToTheSelectedPhysicalUnit() {
+        Equipment pump = equipmentRepository.saveAndFlush(
+                new Equipment("Pump", "PUMP-OPEN-001", null, "Workshop B")
+        );
+        jdbc.update("UPDATE repair_requests SET equipment_id = ? WHERE id = ?", pump.getId(), ownNew);
+        entityManager.clear();
+
+        assertThat(service.getEquipmentOpenRequests(pump.getId(), requester.getId()))
+                .extracting(RepairRequestListItem::id).containsExactly(ownNew);
+        assertThat(service.getEquipmentOpenRequests(pump.getId(), otherTechnician.getId())).isEmpty();
+        assertThat(service.getEquipmentOpenRequests(equipment.getId(), requester.getId()))
+                .extracting(RepairRequestListItem::id).containsExactly(ownAssigned);
+    }
+
+    @Test
+    void existingEquipmentWithoutVisibleOpenRequestsReturnsAnEmptyList() {
+        Equipment spare = equipmentRepository.saveAndFlush(
+                new Equipment("Spare press", "SPARE-OPEN-001", null, "Storage")
+        );
+        assertThat(service.getEquipmentOpenRequests(spare.getId(), admin.getId())).isEmpty();
+    }
+
+    @Test
+    void missingEquipmentCannotBeReadAsAnEmptyOpenRequestList() {
+        assertThatThrownBy(() -> service.getEquipmentOpenRequests(Long.MAX_VALUE, admin.getId()))
+                .isInstanceOf(EquipmentNotFoundException.class);
     }
 
     @ParameterizedTest

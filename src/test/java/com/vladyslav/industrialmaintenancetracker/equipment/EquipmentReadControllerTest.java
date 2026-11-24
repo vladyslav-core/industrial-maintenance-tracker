@@ -5,6 +5,9 @@ import com.vladyslav.industrialmaintenancetracker.equipment.dto.EquipmentDetails
 import com.vladyslav.industrialmaintenancetracker.equipment.dto.EquipmentListItem;
 import com.vladyslav.industrialmaintenancetracker.exception.EquipmentNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.maintenance.dto.MaintenanceHistoryItem;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.RepairRequestPriority;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.RepairRequestStatus;
+import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestListItem;
 import com.vladyslav.industrialmaintenancetracker.security.CustomUserDetails;
 import com.vladyslav.industrialmaintenancetracker.security.SecurityConfig;
 import com.vladyslav.industrialmaintenancetracker.user.Role;
@@ -114,7 +117,7 @@ class EquipmentReadControllerTest {
         );
 
         when(equipmentDetailsService.getDetailsPage(7L, 42L))
-                .thenReturn(new EquipmentDetailsPage(details, List.of()));
+                .thenReturn(new EquipmentDetailsPage(details, List.of(), List.of()));
 
         mockMvc.perform(get("/equipment/7").with(currentUser(role)))
                 .andExpect(status().isOk())
@@ -125,6 +128,8 @@ class EquipmentReadControllerTest {
                 ))
                 .andExpect(model().attributeExists("statuses"))
                 .andExpect(model().attribute("maintenanceHistory", List.of()))
+                .andExpect(model().attribute("openRepairRequests", List.of()))
+                .andExpect(content().string(containsString("No open repair requests.")))
                 .andExpect(content().string(containsString("Maintenance history")))
                 .andExpect(content().string(containsString("No maintenance records found.")))
                 .andExpect(model().attribute(
@@ -188,7 +193,7 @@ class EquipmentReadControllerTest {
     void shouldRenderOnlyPermittedRequestLinksUsingAuthenticatedIdentity(boolean canViewRequest) throws Exception {
         var item = historyItem(canViewRequest, "Seal replaced. Pressure test passed.");
         when(equipmentDetailsService.getDetailsPage(7L, 42L))
-                .thenReturn(new EquipmentDetailsPage(details(), List.of(item)));
+                .thenReturn(new EquipmentDetailsPage(details(), List.of(item), List.of()));
 
         var response = mockMvc.perform(get("/equipment/7").with(currentUser(Role.REQUESTER))
                         .param("viewerId", "99").param("admin", "true"))
@@ -214,7 +219,7 @@ class EquipmentReadControllerTest {
     void shouldEscapeHistoryTextAndPreserveLineBreaks() throws Exception {
         var item = historyItem(false, "Seal replaced.\n<script>alert(1)</script>");
         when(equipmentDetailsService.getDetailsPage(7L, 42L))
-                .thenReturn(new EquipmentDetailsPage(details(), List.of(item)));
+                .thenReturn(new EquipmentDetailsPage(details(), List.of(item), List.of()));
 
         mockMvc.perform(get("/equipment/7").with(currentUser(Role.REQUESTER)))
                 .andExpect(status().isOk())
@@ -222,6 +227,35 @@ class EquipmentReadControllerTest {
                 .andExpect(content().string(containsString("Seal replaced.\n&lt;script&gt;alert(1)&lt;/script&gt;")))
                 .andExpect(content().string(not(containsString("<script>"))))
                 .andExpect(content().string(containsString("white-space: pre-wrap")));
+    }
+
+    @ParameterizedTest
+    @EnumSource(Role.class)
+    void shouldRenderOpenRequestFieldsAndLinksForEveryRole(Role role) throws Exception {
+        Instant created = Instant.parse("2026-11-01T07:00:00Z");
+        var openRequests = List.of(
+                new RepairRequestListItem(74L, "Pressure check completed", 7L, "Hydraulic press",
+                        "Author", "Test Technician", RepairRequestPriority.MEDIUM,
+                        RepairRequestStatus.COMPLETED, created, created),
+                new RepairRequestListItem(73L, "Oil <leak> in press", 7L, "Hydraulic press",
+                        "Author", null, RepairRequestPriority.HIGH, RepairRequestStatus.NEW, created, created)
+        );
+        when(equipmentDetailsService.getDetailsPage(7L, 42L))
+                .thenReturn(new EquipmentDetailsPage(details(), List.of(), openRequests));
+
+        mockMvc.perform(get("/equipment/7").with(currentUser(role)))
+                .andExpect(status().isOk())
+                .andExpect(model().attribute("openRepairRequests", openRequests))
+                .andExpect(content().string(containsString("Open repair requests")))
+                .andExpect(content().string(containsString("href=\"/repair-requests/74\"")))
+                .andExpect(content().string(containsString("href=\"/repair-requests/73\"")))
+                .andExpect(content().string(containsString("Oil &lt;leak&gt; in press")))
+                .andExpect(content().string(containsString("COMPLETED")))
+                .andExpect(content().string(containsString("NEW")))
+                .andExpect(content().string(containsString("HIGH")))
+                .andExpect(content().string(containsString("Test Technician")))
+                .andExpect(content().string(containsString("Not assigned")))
+                .andExpect(content().string(not(containsString("No open repair requests."))));
     }
 
     @Test

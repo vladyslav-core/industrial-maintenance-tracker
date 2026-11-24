@@ -101,6 +101,35 @@
         Decommissioned equipment cannot be returned to service.
     </p>
 
+    <section id="open-repair-requests">
+        <h2>Open repair requests</h2>
+        <p th:if="${#lists.isEmpty(openRepairRequests)}">No open repair requests.</p>
+
+        <table th:if="${not #lists.isEmpty(openRepairRequests)}">
+            <thead>
+            <tr>
+                <th>Request</th>
+                <th>Title</th>
+                <th>Status</th>
+                <th>Priority</th>
+                <th>Technician</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="request : ${openRepairRequests}">
+                <td>
+                    <a th:href="@{/repair-requests/{id}(id=${request.id})}"
+                       th:text="${'#' + request.id}"></a>
+                </td>
+                <td th:text="${request.title}"></td>
+                <td th:text="${request.status}"></td>
+                <td th:text="${request.priority}"></td>
+                <td th:text="${request.technicianName != null ? request.technicianName : 'Not assigned'}"></td>
+            </tr>
+            </tbody>
+        </table>
+    </section>
+
     <section th:replace="~{maintenance/history :: history(${maintenanceHistory}, false)}"></section>
 </main>
 </body>

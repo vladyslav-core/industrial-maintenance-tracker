@@ -72,6 +72,7 @@ public class EquipmentController {
 
             model.addAttribute("equipment", page.equipment());
             model.addAttribute("maintenanceHistory", page.maintenanceHistory());
+            model.addAttribute("openRepairRequests", page.openRepairRequests());
             model.addAttribute(
                     "statuses",
                     EquipmentStatus.values()

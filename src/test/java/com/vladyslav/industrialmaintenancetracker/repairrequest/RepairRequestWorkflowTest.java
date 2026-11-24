@@ -3,7 +3,9 @@ package com.vladyslav.industrialmaintenancetracker.repairrequest;
 import com.vladyslav.industrialmaintenancetracker.equipment.Equipment;
 import com.vladyslav.industrialmaintenancetracker.equipment.EquipmentRepository;
 import com.vladyslav.industrialmaintenancetracker.equipment.EquipmentStatus;
+import com.vladyslav.industrialmaintenancetracker.equipment.EquipmentDetailsService;
 import com.vladyslav.industrialmaintenancetracker.maintenance.MaintenanceRecordRepository;
+import com.vladyslav.industrialmaintenancetracker.maintenance.MaintenanceRecordService;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestDetails;
 import com.vladyslav.industrialmaintenancetracker.user.Role;
 import com.vladyslav.industrialmaintenancetracker.user.User;
@@ -11,8 +13,10 @@ import com.vladyslav.industrialmaintenancetracker.user.UserRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -21,6 +25,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -32,12 +37,16 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
+import static org.mockito.Mockito.doAnswer;
 import static org.springframework.security.test.web.servlet.response.SecurityMockMvcResultMatchers.authenticated;
 import static org.springframework.security.test.web.servlet.response.SecurityMockMvcResultMatchers.unauthenticated;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -70,6 +79,8 @@ class RepairRequestWorkflowTest {
     @Autowired private PasswordEncoder encoder;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private EquipmentDetailsService equipmentDetails;
+    @MockitoSpyBean private MaintenanceRecordService maintenanceReads;
 
     private final EnumMap<Actor, Long> userIds = new EnumMap<>(Actor.class);
     private final EnumMap<Actor, MockHttpSession> sessions = new EnumMap<>(Actor.class);
@@ -422,14 +433,18 @@ class RepairRequestWorkflowTest {
         Long cancelled = create(Actor.AUTHOR);
         succeed(Action.CANCEL, cancelled);
 
-        assertThat(open(Actor.AUTHOR, "/equipment/" + equipmentId))
+        String beforeAcceptance = open(Actor.AUTHOR, "/equipment/" + equipmentId);
+        assertThat(section(beforeAcceptance, "maintenance-history"))
                 .contains("No maintenance records found.")
                 .doesNotContain("Seal replaced.", "#" + completed, "#" + cancelled);
+        assertThat(listIds(section(beforeAcceptance, "open-repair-requests"))).containsExactly(completed);
 
         succeed(Action.CLOSE, completed);
-        String history = open(Actor.AUTHOR, "/equipment/" + equipmentId);
+        String afterAcceptance = open(Actor.AUTHOR, "/equipment/" + equipmentId);
+        String history = section(afterAcceptance, "maintenance-history");
         assertThat(listIds(history)).containsExactly(completed);
         assertThat(history).doesNotContain("No maintenance records found.", "#" + cancelled);
+        assertThat(section(afterAcceptance, "open-repair-requests")).contains("No open repair requests.");
         assertThat(open(Actor.AUTHOR, "/equipment/" + otherEquipmentId))
                 .contains("No maintenance records found.").doesNotContain("#" + completed);
     }
@@ -445,6 +460,89 @@ class RepairRequestWorkflowTest {
         assertThat(html).contains("#" + id, "Seal replaced. Pressure test passed.");
         assertThat(listIds(html)).isEmpty();
         mvc.perform(get(card(id)).session(login(Actor.TECHNICIAN))).andExpect(status().isNotFound());
+    }
+
+    @ParameterizedTest
+    @EnumSource(Actor.class)
+    void equipmentOpenRequestsFollowAuthorshipAndAssignmentWithoutDuplicates(Actor viewer) throws Exception {
+        Long ownNew = create(Actor.AUTHOR);
+        Long assigned = create(Actor.AUTHOR);
+        succeed(Action.ASSIGN, assigned);
+        Long technicianOwn = create(Actor.TECHNICIAN);
+        Long selfAssigned = create(Actor.TECHNICIAN);
+        succeed(Action.ASSIGN, selfAssigned);
+        Long foreign = create(Actor.OTHER_REQUESTER);
+        mvc.perform(securedPost(Actor.ADMIN, card(foreign) + "/assign")
+                        .param("technicianId", userIds.get(Actor.OTHER_TECHNICIAN).toString()))
+                .andExpect(status().is3xxRedirection()).andExpect(flash().attributeExists("successMessage"));
+        Long otherUnit = create(Actor.AUTHOR, otherEquipmentId);
+
+        String html = open(viewer, "/equipment/" + equipmentId
+                + "?viewerId=" + userIds.get(Actor.ADMIN) + "&admin=true");
+        Set<Long> expected = switch (viewer) {
+            case ADMIN -> Set.of(ownNew, assigned, technicianOwn, selfAssigned, foreign);
+            case AUTHOR -> Set.of(ownNew, assigned);
+            case TECHNICIAN -> Set.of(assigned, technicianOwn, selfAssigned);
+            case OTHER_REQUESTER, OTHER_TECHNICIAN -> Set.of(foreign);
+        };
+        String openRequests = section(html, "open-repair-requests");
+        assertThat(listIds(openRequests)).isEqualTo(expected).doesNotContain(otherUnit);
+        assertThat(section(html, "maintenance-history")).contains("No maintenance records found.");
+        for (Long requestId : expected) {
+            mvc.perform(get(card(requestId)).session(login(viewer))).andExpect(status().isOk());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {0L, -1L, Long.MAX_VALUE})
+    void nonexistentEquipmentKeepsTheExistingRedirect(Long id) throws Exception {
+        mvc.perform(get("/equipment/" + id).session(login(Actor.ADMIN)))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/equipment"))
+                .andExpect(flash().attributeExists("errorMessage"));
+    }
+
+    @Test
+    @Timeout(30)
+    void closingBetweenHistoryAndOpenRequestReadsKeepsOneConsistentEquipmentPage() throws Exception {
+        Long id = prepare(RepairRequestStatus.COMPLETED);
+        var acceptedVersion = current(id).updatedAt();
+        CountDownLatch historyLoaded = new CountDownLatch(1);
+        CountDownLatch continueReading = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            Object history = invocation.callRealMethod();
+            historyLoaded.countDown();
+            assertThat(continueReading.await(10, TimeUnit.SECONDS)).isTrue();
+            return history;
+        }).when(maintenanceReads).getEquipmentHistory(equipmentId, userIds.get(Actor.AUTHOR));
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var pageRead = executor.submit(
+                    () -> equipmentDetails.getDetailsPage(equipmentId, userIds.get(Actor.AUTHOR))
+            );
+            try {
+                assertThat(historyLoaded.await(10, TimeUnit.SECONDS)).isTrue();
+                var closure = executor.submit(
+                        () -> repairs.closeRequest(id, acceptedVersion, userIds.get(Actor.ADMIN))
+                );
+                closure.get(10, TimeUnit.SECONDS);
+            } finally {
+                continueReading.countDown();
+            }
+
+            var beforeClosure = pageRead.get(10, TimeUnit.SECONDS);
+            assertThat(beforeClosure.maintenanceHistory()).isEmpty();
+            assertThat(beforeClosure.openRepairRequests()).singleElement().satisfies(request -> {
+                assertThat(request.id()).isEqualTo(id);
+                assertThat(request.status()).isEqualTo(RepairRequestStatus.COMPLETED);
+            });
+        }
+
+        var afterClosure = equipmentDetails.getDetailsPage(equipmentId, userIds.get(Actor.AUTHOR));
+        assertThat(afterClosure.openRepairRequests()).isEmpty();
+        assertThat(afterClosure.maintenanceHistory()).singleElement()
+                .satisfies(record -> assertThat(record.requestId()).isEqualTo(id));
+        assertThat(maintenance.count()).isEqualTo(1);
     }
 
     private enum Actor {
@@ -500,9 +598,13 @@ class RepairRequestWorkflowTest {
     }
 
     private Long create(Actor actor) throws Exception {
-        String form = open(actor, "/repair-requests/new?equipmentId=" + equipmentId);
+        return create(actor, equipmentId);
+    }
+
+    private Long create(Actor actor, Long selectedEquipmentId) throws Exception {
+        String form = open(actor, "/repair-requests/new?equipmentId=" + selectedEquipmentId);
         var result = mvc.perform(post("/repair-requests").session(login(actor)).param("_csrf", hidden(form, "_csrf"))
-                        .param("equipmentId", equipmentId.toString()).param("title", "Oil leak in press")
+                        .param("equipmentId", selectedEquipmentId.toString()).param("title", "Oil leak in press")
                         .param("description", "Hydraulic oil leaking around the seal").param("priority", "")
                         .param("createdById", userIds.get(Actor.OTHER_REQUESTER).toString())
                         .param("assignedTechnicianId", userIds.get(Actor.TECHNICIAN).toString()).param("status", "CLOSED"))
@@ -561,5 +663,12 @@ class RepairRequestWorkflowTest {
     private Set<Long> listIds(String html) {
         return Pattern.compile("href=\"/repair-requests/(\\d+)\"").matcher(html).results()
                 .map(match -> Long.valueOf(match.group(1))).collect(Collectors.toSet());
+    }
+
+    private String section(String html, String id) {
+        var matcher = Pattern.compile("<section\\b[^>]*\\bid=\"" + Pattern.quote(id)
+                + "\"[^>]*>(.*?)</section>", Pattern.DOTALL).matcher(html);
+        assertThat(matcher.find()).as("rendered section %s", id).isTrue();
+        return matcher.group(1);
     }
 }

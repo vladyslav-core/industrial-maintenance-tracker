@@ -81,6 +81,24 @@ public class RepairRequestService {
     }
 
     @Transactional(readOnly = true)
+    public List<RepairRequestListItem> getEquipmentOpenRequests(Long equipmentId, Long viewerId) {
+        User viewer = activeViewer(viewerId);
+        equipmentRepository.findById(equipmentId)
+                .orElseThrow(() -> new EquipmentNotFoundException(equipmentId));
+
+        return requestRepository.findVisibleOpenByEquipment(
+                        equipmentId,
+                        viewer.getId(),
+                        viewer.getRole() == Role.ADMIN,
+                        viewer.getRole() == Role.TECHNICIAN,
+                        List.of(RepairRequestStatus.NEW, RepairRequestStatus.ASSIGNED,
+                                RepairRequestStatus.IN_PROGRESS, RepairRequestStatus.COMPLETED)
+                ).stream()
+                .map(this::listItem)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public RepairRequestDetails getDetails(Long requestId, Long viewerId) {
         User viewer = activeViewer(viewerId);
         RepairRequest request = visibleRequest(requestId, viewer);
