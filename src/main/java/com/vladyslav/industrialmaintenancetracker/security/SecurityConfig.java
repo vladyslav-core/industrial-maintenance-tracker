@@ -65,6 +65,10 @@ public class SecurityConfig {
                                 "/repair-requests/*/resolution",
                                 "/repair-requests/*/complete"
                         ).hasRole("TECHNICIAN")
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/maintenance-history"
+                        ).hasAnyRole("ADMIN", "TECHNICIAN")
                         .anyRequest().authenticated()
                 )
                 .formLogin(form -> form

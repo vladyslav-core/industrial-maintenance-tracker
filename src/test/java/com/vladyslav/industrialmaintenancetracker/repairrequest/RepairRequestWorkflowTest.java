@@ -545,6 +545,108 @@ class RepairRequestWorkflowTest {
         assertThat(maintenance.count()).isEqualTo(1);
     }
 
+    @ParameterizedTest
+    @EnumSource(value = Actor.class, names = {"ADMIN", "TECHNICIAN", "OTHER_TECHNICIAN"})
+    void generalHistoryShowsEveryAcceptedRepairButKeepsRequestAccessSeparate(Actor actor) throws Exception {
+        Long id = prepare(RepairRequestStatus.COMPLETED);
+        succeed(Action.CLOSE, id);
+        var closed = current(id);
+
+        String html = open(actor, "/maintenance-history?viewerId=" + userIds.get(Actor.ADMIN) + "&admin=true");
+        String history = section(html, "maintenance-history");
+        assertThat(history).contains("#" + id, "href=\"/equipment/" + equipmentId + "\"",
+                "Workflow Press (WF-PRESS-001)", closed.createdAt().toString(),
+                closed.completedAt().toString(), closed.closedAt().toString(),
+                "Seal replaced. Pressure test passed. &lt;script&gt;result&lt;/script&gt;")
+                .doesNotContain("<script>result</script>");
+        boolean canViewRequest = actor != Actor.OTHER_TECHNICIAN;
+        assertThat(listIds(history)).isEqualTo(canViewRequest ? Set.of(id) : Set.of());
+        mvc.perform(get(card(id)).session(login(actor))).andExpect(status().is(canViewRequest ? 200 : 404));
+        assertThat(open(actor, "/")).contains("href=\"/maintenance-history\"");
+        assertThat(maintenance.count()).isEqualTo(1);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = Actor.class, names = {"AUTHOR", "OTHER_REQUESTER"})
+    void requesterCannotReadEitherGeneralHistoryUrlWithARealSession(Actor actor) throws Exception {
+        Long id = prepare(RepairRequestStatus.COMPLETED);
+        succeed(Action.CLOSE, id);
+
+        assertThat(open(actor, "/")).doesNotContain("href=\"/maintenance-history\"");
+        for (String path : List.of("/maintenance-history", "/maintenance-history?equipmentId=" + equipmentId)) {
+            mvc.perform(get(path).session(login(actor))).andExpect(status().isForbidden());
+        }
+        assertThat(section(open(actor, "/equipment/" + equipmentId), "maintenance-history"))
+                .contains("#" + id, "Seal replaced.");
+    }
+
+    @Test
+    void generalHistoryFiltersRealRecordsAndKeepsEquipmentWithoutHistorySelectable() throws Exception {
+        Long id = prepare(RepairRequestStatus.COMPLETED);
+        Long cancelled = create(Actor.AUTHOR);
+        succeed(Action.CANCEL, cancelled);
+        assertThat(open(Actor.ADMIN, "/maintenance-history")).contains("No maintenance records found.");
+        succeed(Action.CLOSE, id);
+
+        Long other = create(Actor.AUTHOR, otherEquipmentId);
+        succeed(Action.ASSIGN, other);
+        succeed(Action.START, other);
+        complete(Actor.TECHNICIAN, other, "Other press repaired.");
+        // COMPLETED on the other equipment still has no history.
+        String empty = open(Actor.OTHER_TECHNICIAN, "/maintenance-history?equipmentId=" + otherEquipmentId);
+        assertThat(section(empty, "maintenance-history")).contains("No maintenance records found.");
+        assertThat(empty).containsSubsequence("Other Press (WF-PRESS-002)", "Workflow Press (WF-PRESS-001)");
+        succeed(Action.CLOSE, other);
+
+        assertThat(listIds(section(open(Actor.ADMIN, "/maintenance-history"), "maintenance-history")))
+                .containsExactlyInAnyOrder(id, other);
+        assertThat(listIds(section(open(Actor.ADMIN, "/maintenance-history?equipmentId="), "maintenance-history")))
+                .containsExactlyInAnyOrder(id, other);
+        assertThat(listIds(section(open(Actor.ADMIN, "/maintenance-history?equipmentId=" + equipmentId), "maintenance-history")))
+                .containsExactly(id);
+        assertThat(listIds(section(open(Actor.TECHNICIAN, "/maintenance-history?equipmentId=" + otherEquipmentId), "maintenance-history")))
+                .containsExactly(other);
+        assertThat(maintenance.count()).isEqualTo(2);
+    }
+
+    @Test
+    void generalHistoryRetainsDecommissionedEquipmentAndInactiveFormerTechnician() throws Exception {
+        Long id = prepare(RepairRequestStatus.COMPLETED);
+        succeed(Action.CLOSE, id);
+        jdbc.update("UPDATE users SET active = false, role = 'REQUESTER' WHERE id = ?", userIds.get(Actor.TECHNICIAN));
+        jdbc.update("UPDATE equipment SET status = 'DECOMMISSIONED' WHERE id = ?", equipmentId);
+
+        for (Actor actor : List.of(Actor.ADMIN, Actor.OTHER_TECHNICIAN)) {
+            String html = open(actor, "/maintenance-history?equipmentId=" + equipmentId);
+            assertThat(html).contains("Workflow Press (WF-PRESS-001)", "Workflow TECHNICIAN", "#" + id);
+            assertThat(html).containsPattern("<option[^>]*value=\"" + equipmentId + "\"[^>]*selected=\"selected\"[^>]*>");
+            assertThat(section(html, "maintenance-history")).contains("Seal replaced.");
+        }
+        assertThat(maintenance.count()).isEqualTo(1);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = Actor.class, names = {"ADMIN", "TECHNICIAN"})
+    void cachedPrivilegedSessionCannotReadGeneralHistoryAfterDatabaseRoleChange(Actor actor) throws Exception {
+        var session = login(actor);
+        jdbc.update("UPDATE users SET role = 'REQUESTER' WHERE id = ?", userIds.get(actor));
+
+        for (String path : List.of("/maintenance-history", "/maintenance-history?equipmentId=" + equipmentId)) {
+            mvc.perform(get(path).session(session)).andExpect(status().isForbidden());
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = Actor.class, names = {"ADMIN", "TECHNICIAN"})
+    void cachedPrivilegedSessionCannotReadGeneralHistoryAfterDeactivation(Actor actor) throws Exception {
+        var session = login(actor);
+        jdbc.update("UPDATE users SET active = false WHERE id = ?", userIds.get(actor));
+
+        for (String path : List.of("/maintenance-history", "/maintenance-history?equipmentId=" + equipmentId)) {
+            mvc.perform(get(path).session(session)).andExpect(status().isForbidden());
+        }
+    }
+
     private enum Actor {
         ADMIN("workflow.admin@example.com", Role.ADMIN),
         AUTHOR("workflow.author@example.com", Role.REQUESTER),

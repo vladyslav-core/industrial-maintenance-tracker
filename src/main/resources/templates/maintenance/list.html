@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Maintenance history</title>
+</head>
+<body>
+<h1>Maintenance history</h1>
+
+<p><a th:href="@{/}">Back to home</a></p>
+
+<form th:action="@{/maintenance-history}" method="get">
+    <label for="equipmentId">Equipment</label>
+    <select id="equipmentId" name="equipmentId">
+        <option value="" th:selected="${selectedEquipmentId == null}">All equipment</option>
+        <option th:each="equipment : ${page.equipment}"
+                th:value="${equipment.id}"
+                th:selected="${equipment.id == selectedEquipmentId}"
+                th:text="${equipment.name + ' (' + equipment.inventoryNumber + ')'}"></option>
+    </select>
+    <button type="submit">Apply</button>
+    <a th:href="@{/maintenance-history}">Clear</a>
+</form>
+
+<section id="maintenance-history"
+         th:insert="~{maintenance/history :: records(${page.history}, true)}"></section>
+</body>
+</html>

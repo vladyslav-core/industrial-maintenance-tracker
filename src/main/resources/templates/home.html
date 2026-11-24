@@ -17,6 +17,10 @@
     <a th:href="@{/repair-requests}">Repair requests</a>
 </p>
 
+<p th:if="${canViewMaintenanceHistory}">
+    <a th:href="@{/maintenance-history}">Maintenance history</a>
+</p>
+
 <form th:action="@{/logout}" method="post">
     <button type="submit">Sign out</button>
 </form>

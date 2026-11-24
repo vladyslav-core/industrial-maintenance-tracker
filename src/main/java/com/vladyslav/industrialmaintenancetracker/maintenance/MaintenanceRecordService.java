@@ -1,8 +1,10 @@
 package com.vladyslav.industrialmaintenancetracker.maintenance;
 
 import com.vladyslav.industrialmaintenancetracker.equipment.EquipmentRepository;
+import com.vladyslav.industrialmaintenancetracker.equipment.dto.EquipmentListItem;
 import com.vladyslav.industrialmaintenancetracker.exception.EquipmentNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.maintenance.dto.MaintenanceHistoryItem;
+import com.vladyslav.industrialmaintenancetracker.maintenance.dto.MaintenanceHistoryPage;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.RepairRequest;
 import com.vladyslav.industrialmaintenancetracker.user.Role;
 import com.vladyslav.industrialmaintenancetracker.user.User;
@@ -46,6 +48,17 @@ public class MaintenanceRecordService {
             requireEquipment(equipmentId);
         }
         return history(equipmentId, viewer);
+    }
+
+    public MaintenanceHistoryPage getHistoryPage(Long equipmentId, Long viewerId) {
+        List<MaintenanceHistoryItem> items = getHistory(equipmentId, viewerId);
+        List<EquipmentListItem> options = equipmentRepository.search("", null).stream()
+                .map(equipment -> new EquipmentListItem(
+                        equipment.getId(), equipment.getName(), equipment.getInventoryNumber(),
+                        equipment.getLocation(), equipment.getStatus()
+                ))
+                .toList();
+        return new MaintenanceHistoryPage(items, options);
     }
 
     private User activeViewer(Long viewerId) {

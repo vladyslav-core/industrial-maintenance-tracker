@@ -2,6 +2,7 @@ package com.vladyslav.industrialmaintenancetracker.maintenance;
 
 import com.vladyslav.industrialmaintenancetracker.equipment.Equipment;
 import com.vladyslav.industrialmaintenancetracker.equipment.EquipmentRepository;
+import com.vladyslav.industrialmaintenancetracker.equipment.EquipmentStatus;
 import com.vladyslav.industrialmaintenancetracker.exception.EquipmentNotFoundException;
 import com.vladyslav.industrialmaintenancetracker.maintenance.dto.MaintenanceHistoryItem;
 import com.vladyslav.industrialmaintenancetracker.repairrequest.RepairRequest;
@@ -114,6 +115,8 @@ class MaintenanceRecordServiceTest {
 
         assertThatThrownBy(() -> service.getHistory(equipmentId, 11L))
                 .isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> service.getHistoryPage(equipmentId, 11L))
+                .isInstanceOf(AccessDeniedException.class);
         verifyNoInteractions(equipment, records);
     }
 
@@ -128,6 +131,8 @@ class MaintenanceRecordServiceTest {
                 .isInstanceOf(AccessDeniedException.class);
         assertThatThrownBy(() -> service.getHistory(null, 99L))
                 .isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> service.getHistoryPage(null, 99L))
+                .isInstanceOf(AccessDeniedException.class);
         verifyNoInteractions(equipment, records);
     }
 
@@ -139,6 +144,8 @@ class MaintenanceRecordServiceTest {
                 .isInstanceOf(AccessDeniedException.class);
         assertThatThrownBy(() -> service.getHistory(null, 99L))
                 .isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> service.getHistoryPage(null, 99L))
+                .isInstanceOf(AccessDeniedException.class);
         verifyNoInteractions(equipment, records);
     }
 
@@ -147,6 +154,8 @@ class MaintenanceRecordServiceTest {
         assertThatThrownBy(() -> service.getEquipmentHistory(7L, null))
                 .isInstanceOf(AccessDeniedException.class);
         assertThatThrownBy(() -> service.getHistory(null, null))
+                .isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> service.getHistoryPage(null, null))
                 .isInstanceOf(AccessDeniedException.class);
         verifyNoInteractions(users, equipment, records);
     }
@@ -169,6 +178,8 @@ class MaintenanceRecordServiceTest {
 
         assertThatThrownBy(() -> service.getHistory(equipmentId, 99L))
                 .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.getHistoryPage(equipmentId, 99L))
+                .isInstanceOf(IllegalArgumentException.class);
         verifyNoInteractions(equipment, records);
     }
 
@@ -180,6 +191,8 @@ class MaintenanceRecordServiceTest {
         assertThatThrownBy(() -> service.getEquipmentHistory(7L, 99L))
                 .isInstanceOf(EquipmentNotFoundException.class);
         assertThatThrownBy(() -> service.getHistory(7L, 99L))
+                .isInstanceOf(EquipmentNotFoundException.class);
+        assertThatThrownBy(() -> service.getHistoryPage(7L, 99L))
                 .isInstanceOf(EquipmentNotFoundException.class);
         verifyNoInteractions(records);
     }
@@ -196,11 +209,34 @@ class MaintenanceRecordServiceTest {
         viewer.updateProfile(viewer.getFullName(), viewer.getEmail(), Role.REQUESTER);
         assertThatThrownBy(() -> service.getHistory(null, 99L))
                 .isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> service.getHistoryPage(null, 99L))
+                .isInstanceOf(AccessDeniedException.class);
         assertThat(service.getEquipmentHistory(7L, 99L)).hasSize(1);
 
         viewer.deactivate();
         assertThatThrownBy(() -> service.getEquipmentHistory(7L, 99L))
                 .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void generalPageIncludesDecommissionedAndEmptyEquipmentAsDetachedFilterOptions() {
+        when(users.findById(99L)).thenReturn(Optional.of(account(99L, Role.TECHNICIAN)));
+        Equipment retired = record.getEquipment();
+        retired.changeStatus(EquipmentStatus.DECOMMISSIONED);
+        Equipment empty = new Equipment("Press B", "HIST10-B", null, "Workshop B");
+        ReflectionTestUtils.setField(empty, "id", 8L);
+        when(equipment.search("", null)).thenReturn(List.of(retired, empty));
+        when(records.findHistory(null)).thenReturn(List.of(record));
+
+        var page = service.getHistoryPage(null, 99L);
+
+        assertThat(page.history()).hasSize(1);
+        assertThat(page.history().getFirst().canViewRequest()).isFalse();
+        assertThat(page.equipment()).extracting(option -> option.getId()).containsExactly(7L, 8L);
+        assertThat(page.equipment().getFirst().getName()).isEqualTo("Press");
+        assertThat(page.equipment().getFirst().getInventoryNumber()).isEqualTo("HIST10-A");
+        assertThat(page.equipment().getFirst().getStatus()).isEqualTo(EquipmentStatus.DECOMMISSIONED);
+        assertThat(page.equipment().get(1).getName()).isEqualTo("Press B");
     }
 
     private User account(Long id, Role role) {

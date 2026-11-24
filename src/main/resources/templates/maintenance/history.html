@@ -3,6 +3,10 @@
 <body>
 <section id="maintenance-history" th:fragment="history(items, showEquipment)">
     <h2>Maintenance history</h2>
+    <th:block th:replace="~{maintenance/history :: records(${items}, ${showEquipment})}"></th:block>
+</section>
+
+<th:block th:fragment="records(items, showEquipment)">
 
     <p th:if="${#lists.isEmpty(items)}">No maintenance records found.</p>
 
@@ -47,6 +51,6 @@
             <dd th:text="${item.closedAt}"></dd>
         </dl>
     </article>
-</section>
+</th:block>
 </body>
 </html>
