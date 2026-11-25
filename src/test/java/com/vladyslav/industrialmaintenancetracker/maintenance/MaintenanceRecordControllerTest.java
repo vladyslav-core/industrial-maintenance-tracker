@@ -1,6 +1,10 @@
 package com.vladyslav.industrialmaintenancetracker.maintenance;
 
 import com.vladyslav.industrialmaintenancetracker.common.controller.HomeController;
+import com.vladyslav.industrialmaintenancetracker.dashboard.DashboardService;
+import com.vladyslav.industrialmaintenancetracker.dashboard.dto.AdminDashboard;
+import com.vladyslav.industrialmaintenancetracker.dashboard.dto.DashboardData;
+import com.vladyslav.industrialmaintenancetracker.dashboard.dto.TechnicianDashboard;
 import com.vladyslav.industrialmaintenancetracker.equipment.EquipmentStatus;
 import com.vladyslav.industrialmaintenancetracker.equipment.dto.EquipmentListItem;
 import com.vladyslav.industrialmaintenancetracker.exception.EquipmentNotFoundException;
@@ -10,6 +14,7 @@ import com.vladyslav.industrialmaintenancetracker.security.CustomUserDetails;
 import com.vladyslav.industrialmaintenancetracker.security.SecurityConfig;
 import com.vladyslav.industrialmaintenancetracker.user.Role;
 import com.vladyslav.industrialmaintenancetracker.user.User;
+import com.vladyslav.industrialmaintenancetracker.user.dto.CurrentUserSummary;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -43,6 +48,7 @@ class MaintenanceRecordControllerTest {
 
     @Autowired private MockMvc mvc;
     @MockitoBean private MaintenanceRecordService records;
+    @MockitoBean private DashboardService dashboards;
 
     @ParameterizedTest
     @EnumSource(value = Role.class, names = {"ADMIN", "TECHNICIAN"})
@@ -156,11 +162,18 @@ class MaintenanceRecordControllerTest {
     @ParameterizedTest
     @EnumSource(Role.class)
     void homeOffersMaintenanceHistoryOnlyToPermittedRoles(Role role) throws Exception {
+        when(dashboards.getDashboard(42L, role)).thenReturn(new DashboardData(
+                new CurrentUserSummary(42L, "Viewer", role),
+                role == Role.ADMIN ? new AdminDashboard(0, 0, 0, 0, 0) : null,
+                role == Role.TECHNICIAN ? new TechnicianDashboard(0, 0, List.of(), List.of()) : null,
+                List.of()
+        ));
         String html = mvc.perform(get("/").with(currentUser(role)))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
 
         assertThat(html.contains("href=\"/maintenance-history\""))
                 .isEqualTo(role == Role.ADMIN || role == Role.TECHNICIAN);
+        verify(dashboards).getDashboard(42L, role);
         verifyNoInteractions(records);
     }
 

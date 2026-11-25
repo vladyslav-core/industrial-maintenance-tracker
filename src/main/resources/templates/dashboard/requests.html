@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<body>
+<th:block th:fragment="preview(items, emptyMessage)">
+    <p th:if="${#lists.isEmpty(items)}" th:text="${emptyMessage}">No requests.</p>
+    <table th:unless="${#lists.isEmpty(items)}">
+        <thead>
+        <tr>
+            <th scope="col">Request</th>
+            <th scope="col">Problem</th>
+            <th scope="col">Equipment</th>
+            <th scope="col">Status</th>
+            <th scope="col">Priority</th>
+            <th scope="col">Created</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="item : ${items}">
+            <td><a th:href="@{/repair-requests/{id}(id=${item.id})}" th:text="${'#' + item.id}">#123</a></td>
+            <td th:text="${item.title}">Problem title</td>
+            <td><a th:href="@{/equipment/{id}(id=${item.equipmentId})}" th:text="${item.equipmentName}">Equipment</a></td>
+            <td><span th:attr="data-status=${item.status}" th:text="${item.status}">NEW</span></td>
+            <td><span th:attr="data-priority=${item.priority}" th:text="${item.priority}">MEDIUM</span></td>
+            <td><time th:datetime="${item.createdAt}" th:text="${item.createdAt}">2026-11-25T09:00:00Z</time></td>
+        </tr>
+        </tbody>
+    </table>
+</th:block>
+</body>
+</html>

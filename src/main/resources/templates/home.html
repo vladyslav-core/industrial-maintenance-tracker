@@ -2,27 +2,86 @@
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8">
-    <title>Industrial Maintenance Tracker</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dashboard | Industrial Maintenance Tracker</title>
 </head>
 <body>
-<h1>Industrial Maintenance Tracker</h1>
+<header>
+    <p><a th:href="@{/}">Industrial Maintenance Tracker</a></p>
+    <h1>Dashboard</h1>
+    <p>
+        Signed in as <strong th:text="${dashboard.viewer.fullName}">Viewer</strong>
+        (<span th:text="${dashboard.viewer.role}">REQUESTER</span>)
+    </p>
+    <nav aria-label="Main navigation">
+        <ul>
+            <li><a th:href="@{/}" aria-current="page">Dashboard</a></li>
+            <li><a th:href="@{/repair-requests/new}">New request</a></li>
+            <li><a th:href="@{/repair-requests}">Repair requests</a></li>
+            <li><a th:href="@{/equipment}">Equipment</a></li>
+            <li th:if="${dashboard.viewer.role.name() == 'ADMIN' or dashboard.viewer.role.name() == 'TECHNICIAN'}">
+                <a th:href="@{/maintenance-history}">Maintenance history</a>
+            </li>
+            <li th:if="${dashboard.viewer.role.name() == 'ADMIN'}"><a th:href="@{/users}">Users</a></li>
+        </ul>
+        <form th:action="@{/logout}" method="post">
+            <button type="submit">Sign out</button>
+        </form>
+    </nav>
+</header>
 
-<p>Application is running successfully.</p>
+<main id="dashboard" th:switch="${dashboard.viewer.role.name()}">
+    <section th:case="'ADMIN'" id="administrator-dashboard">
+        <h2>Requests overview</h2>
+        <dl>
+            <dt><a th:href="@{/repair-requests(status='NEW')}">New requests</a></dt>
+            <dd id="new-request-count" th:text="${dashboard.administrator.newCount}">0</dd>
+            <dt><a th:href="@{/repair-requests(status='ASSIGNED')}">Assigned requests</a></dt>
+            <dd id="assigned-request-count" th:text="${dashboard.administrator.assignedCount}">0</dd>
+            <dt><a th:href="@{/repair-requests(status='IN_PROGRESS')}">In progress</a></dt>
+            <dd id="in-progress-request-count" th:text="${dashboard.administrator.inProgressCount}">0</dd>
+            <dt><a th:href="@{/repair-requests(status='COMPLETED')}">Awaiting review</a></dt>
+            <dd id="awaiting-review-count" th:text="${dashboard.administrator.awaitingReviewCount}">0</dd>
+            <dt>Critical open requests</dt>
+            <dd id="critical-open-request-count" aria-describedby="critical-open-help"
+                th:text="${dashboard.administrator.criticalOpenCount}">0</dd>
+        </dl>
+        <p id="critical-open-help">Excludes closed and cancelled requests</p>
+        <p>
+            <a th:href="@{/equipment/new}">Add equipment</a>
+            <a th:href="@{/users/new}">Create user</a>
+        </p>
+        <section id="latest-requests">
+            <h2>Latest requests</h2>
+            <th:block th:replace="~{dashboard/requests :: preview(${dashboard.latestRequests}, 'No repair requests yet.')}"></th:block>
+            <p><a th:href="@{/repair-requests}">View all requests</a></p>
+        </section>
+    </section>
 
-<p>
-    <a th:href="@{/equipment}">Equipment</a>
-</p>
+    <section th:case="'TECHNICIAN'" id="technician-dashboard">
+        <section id="assigned-to-me">
+            <h2>Assigned to me</h2>
+            <p>Requests: <strong id="my-assigned-count" th:text="${dashboard.technician.assignedCount}">0</strong></p>
+            <th:block th:replace="~{dashboard/requests :: preview(${dashboard.technician.assignedRequests}, 'No requests assigned to you.')}"></th:block>
+            <p><a th:href="@{/repair-requests(scope='ASSIGNED_TO_ME',status='ASSIGNED')}">View assigned requests</a></p>
+        </section>
+        <section id="my-work-in-progress">
+            <h2>My work in progress</h2>
+            <p>Requests: <strong id="my-in-progress-count" th:text="${dashboard.technician.inProgressCount}">0</strong></p>
+            <th:block th:replace="~{dashboard/requests :: preview(${dashboard.technician.inProgressRequests}, 'No repairs in progress.')}"></th:block>
+            <p><a th:href="@{/repair-requests(scope='ASSIGNED_TO_ME',status='IN_PROGRESS')}">View work in progress</a></p>
+        </section>
+        <p><a th:href="@{/repair-requests(scope='CREATED_BY_ME')}">Created by me</a></p>
+        <p><a th:href="@{/repair-requests}">All visible requests</a></p>
+    </section>
 
-<p>
-    <a th:href="@{/repair-requests}">Repair requests</a>
-</p>
-
-<p th:if="${canViewMaintenanceHistory}">
-    <a th:href="@{/maintenance-history}">Maintenance history</a>
-</p>
-
-<form th:action="@{/logout}" method="post">
-    <button type="submit">Sign out</button>
-</form>
+    <section th:case="'REQUESTER'" id="requester-dashboard">
+        <section id="latest-requests">
+            <h2>My latest requests</h2>
+            <th:block th:replace="~{dashboard/requests :: preview(${dashboard.latestRequests}, 'You have not created any requests yet.')}"></th:block>
+            <p><a th:href="@{/repair-requests}">View my requests</a></p>
+        </section>
+    </section>
+</main>
 </body>
 </html>

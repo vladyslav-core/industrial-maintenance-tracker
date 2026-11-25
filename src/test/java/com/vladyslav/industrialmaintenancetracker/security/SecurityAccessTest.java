@@ -1,10 +1,15 @@
 package com.vladyslav.industrialmaintenancetracker.security;
 
 import com.vladyslav.industrialmaintenancetracker.common.controller.HomeController;
+import com.vladyslav.industrialmaintenancetracker.dashboard.DashboardService;
+import com.vladyslav.industrialmaintenancetracker.dashboard.dto.AdminDashboard;
+import com.vladyslav.industrialmaintenancetracker.dashboard.dto.DashboardData;
 import com.vladyslav.industrialmaintenancetracker.user.Role;
+import com.vladyslav.industrialmaintenancetracker.user.User;
 import com.vladyslav.industrialmaintenancetracker.user.UserController;
 import com.vladyslav.industrialmaintenancetracker.user.UserService;
 import com.vladyslav.industrialmaintenancetracker.user.dto.UserListItem;
+import com.vladyslav.industrialmaintenancetracker.user.dto.CurrentUserSummary;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -12,6 +17,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.util.List;
@@ -21,6 +27,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestBuilders.formLogin;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestBuilders.logout;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.security.test.web.servlet.response.SecurityMockMvcResultMatchers.unauthenticated;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -45,6 +52,9 @@ class SecurityAccessTest {
     @MockitoBean
     private UserService userService;
 
+    @MockitoBean
+    private DashboardService dashboardService;
+
     @Test
     void shouldRedirectAnonymousUserToLogin() throws Exception {
         mockMvc.perform(get("/"))
@@ -53,11 +63,18 @@ class SecurityAccessTest {
     }
 
     @Test
-    @WithMockUser(username = "admin@example.com", roles = "ADMIN")
     void shouldAllowAuthenticatedUserToOpenHomePage() throws Exception {
-        mockMvc.perform(get("/"))
+        User administrator = new User("Administrator", "admin@example.com", "private-hash", Role.ADMIN);
+        ReflectionTestUtils.setField(administrator, "id", 42L);
+        when(dashboardService.getDashboard(42L, Role.ADMIN)).thenReturn(new DashboardData(
+                new CurrentUserSummary(42L, "Administrator", Role.ADMIN),
+                new AdminDashboard(0, 0, 0, 0, 0), null, List.of()
+        ));
+
+        mockMvc.perform(get("/").with(user(new CustomUserDetails(administrator))))
                 .andExpect(status().isOk())
                 .andExpect(view().name("home"));
+        verify(dashboardService).getDashboard(42L, Role.ADMIN);
     }
 
     @Test

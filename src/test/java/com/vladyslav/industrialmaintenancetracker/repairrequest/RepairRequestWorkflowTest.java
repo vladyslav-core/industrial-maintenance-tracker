@@ -685,6 +685,130 @@ class RepairRequestWorkflowTest {
         }
     }
 
+    @ParameterizedTest
+    @EnumSource(Actor.class)
+    void homeUsesRealRolesCountsAndPreviewsEvenWithForgedViewerParameters(Actor actor) throws Exception {
+        Long fresh = create(Actor.AUTHOR);
+        mvc.perform(securedPost(Actor.ADMIN, card(fresh) + "/priority").param("priority", "CRITICAL"))
+                .andExpect(status().is3xxRedirection()).andExpect(flash().attributeExists("successMessage"));
+        Long completed = prepare(RepairRequestStatus.COMPLETED);
+        Long other = create(Actor.OTHER_REQUESTER, otherEquipmentId);
+        mvc.perform(securedPost(Actor.ADMIN, card(other) + "/assign")
+                        .param("technicianId", userIds.get(Actor.OTHER_TECHNICIAN).toString()))
+                .andExpect(status().is3xxRedirection()).andExpect(flash().attributeExists("successMessage"));
+        Long own = create(Actor.TECHNICIAN);
+        Long assigned = prepare(RepairRequestStatus.ASSIGNED);
+        Long working = prepare(RepairRequestStatus.IN_PROGRESS);
+
+        String html = mvc.perform(get("/").session(login(actor))
+                        .param("viewerId", userIds.get(Actor.ADMIN).toString()).param("role", "ADMIN")
+                        .param("admin", "true").param("scope", "ALL").param("limit", "100"))
+                .andExpect(status().isOk()).andExpect(view().name("home"))
+                .andReturn().getResponse().getContentAsString();
+        List<Long> expected = switch (actor) {
+            case ADMIN -> List.of(working, assigned, own, other, completed);
+            case AUTHOR -> List.of(working, assigned, completed, fresh);
+            case TECHNICIAN -> List.of(assigned, working);
+            case OTHER_REQUESTER, OTHER_TECHNICIAN -> List.of(other);
+        };
+        assertThat(Pattern.compile("href=\"/repair-requests/(\\d+)\"").matcher(html).results()
+                .map(match -> Long.valueOf(match.group(1))).toList()).containsExactlyElementsOf(expected);
+        for (Long id : expected) {
+            mvc.perform(get(card(id)).session(login(actor))).andExpect(status().isOk());
+        }
+        if (actor == Actor.ADMIN) {
+            assertDashboardMetric(html, "new-request-count", 2);
+            assertDashboardMetric(html, "assigned-request-count", 2);
+            assertDashboardMetric(html, "in-progress-request-count", 1);
+            assertDashboardMetric(html, "awaiting-review-count", 1);
+            assertDashboardMetric(html, "critical-open-request-count", 1);
+            assertThat(listIds(open(actor, "/repair-requests?status=COMPLETED"))).containsExactly(completed);
+            mvc.perform(get(card(fresh)).session(login(actor))).andExpect(status().isOk());
+        } else if (actor.role == Role.TECHNICIAN) {
+            assertDashboardMetric(html, "my-assigned-count", 1);
+            assertDashboardMetric(html, "my-in-progress-count", actor == Actor.TECHNICIAN ? 1 : 0);
+            assertThat(html).doesNotContain("href=\"/users\"", "id=\"critical-open-request-count\"");
+            if (actor == Actor.TECHNICIAN) {
+                assertThat(listIds(open(actor, "/repair-requests?scope=ASSIGNED_TO_ME&status=ASSIGNED"))).containsExactly(assigned);
+                assertThat(listIds(open(actor, "/repair-requests?scope=ASSIGNED_TO_ME&status=IN_PROGRESS"))).containsExactly(working);
+                assertThat(listIds(open(actor, "/repair-requests?scope=CREATED_BY_ME"))).containsExactly(own);
+            }
+        } else {
+            assertThat(html).doesNotContain("href=\"/users\"", "href=\"/maintenance-history\"",
+                    "id=\"critical-open-request-count\"", "id=\"my-assigned-count\"");
+            Long hidden = actor == Actor.AUTHOR ? other : fresh;
+            mvc.perform(get(card(hidden)).session(login(actor))).andExpect(status().isNotFound());
+        }
+    }
+
+    @Test
+    void homeRefreshesThroughWorkReworkClosureAndCancellationWithoutCreatingHistoryOnReads() throws Exception {
+        Long id = prepare(RepairRequestStatus.ASSIGNED);
+        assertDashboardMetric(open(Actor.TECHNICIAN, "/"), "my-assigned-count", 1);
+        succeed(Action.START, id);
+        String working = open(Actor.TECHNICIAN, "/");
+        assertDashboardMetric(working, "my-assigned-count", 0);
+        assertDashboardMetric(working, "my-in-progress-count", 1);
+
+        complete(Actor.TECHNICIAN, id, RESULT);
+        assertDashboardMetric(open(Actor.ADMIN, "/"), "awaiting-review-count", 1);
+        assertDashboardMetric(open(Actor.TECHNICIAN, "/"), "my-in-progress-count", 0);
+        assertThat(maintenance.count()).isZero();
+        succeed(Action.RETURN, id);
+        assertDashboardMetric(open(Actor.ADMIN, "/"), "awaiting-review-count", 0);
+        assertDashboardMetric(open(Actor.TECHNICIAN, "/"), "my-in-progress-count", 1);
+        complete(Actor.TECHNICIAN, id, CORRECTION);
+        succeed(Action.CLOSE, id);
+        assertDashboardMetric(open(Actor.ADMIN, "/"), "awaiting-review-count", 0);
+        assertThat(maintenance.count()).isEqualTo(1);
+
+        Long cancelled = create(Actor.AUTHOR);
+        succeed(Action.CANCEL, cancelled);
+        String own = open(Actor.AUTHOR, "/");
+        assertThat(listIds(own)).containsExactlyInAnyOrder(id, cancelled);
+        assertThat(own).contains("data-status=\"CLOSED\"", "data-status=\"CANCELLED\"");
+        assertDashboardMetric(open(Actor.ADMIN, "/"), "new-request-count", 0);
+        open(Actor.ADMIN, "/");
+        assertThat(maintenance.count()).isEqualTo(1);
+        assertThat(current(id).resolution()).isEqualTo(CORRECTION);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = Actor.class, names = {"ADMIN", "TECHNICIAN", "AUTHOR"})
+    void homeRejectsACachedSessionAfterTheDatabaseRoleChanges(Actor actor) throws Exception {
+        var session = login(actor);
+        Role changed = actor.role == Role.REQUESTER ? Role.TECHNICIAN : Role.REQUESTER;
+        jdbc.update("UPDATE users SET role = ? WHERE id = ?", changed.name(), userIds.get(actor));
+
+        mvc.perform(get("/").session(session)).andExpect(status().isForbidden())
+                .andExpect(forwardedUrl("/access-denied"));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = Actor.class, names = {"ADMIN", "TECHNICIAN", "AUTHOR"})
+    void homeRejectsACachedSessionAfterAccountDeactivation(Actor actor) throws Exception {
+        var session = login(actor);
+        jdbc.update("UPDATE users SET active = false WHERE id = ?", userIds.get(actor));
+
+        mvc.perform(get("/").session(session)).andExpect(status().isForbidden())
+                .andExpect(forwardedUrl("/access-denied"));
+    }
+
+    @Test
+    void homeShowsTheCurrentDatabaseNameForAnExistingSessionAndEscapesIt() throws Exception {
+        var session = login(Actor.AUTHOR);
+        jdbc.update("UPDATE users SET full_name = ? WHERE id = ?", "Renamed <b>requester</b>", userIds.get(Actor.AUTHOR));
+
+        String html = mvc.perform(get("/").session(session)).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(html).contains("Renamed &lt;b&gt;requester&lt;/b&gt;")
+                .doesNotContain("<b>requester</b>", "Workflow AUTHOR");
+    }
+
+    private static void assertDashboardMetric(String html, String id, long count) {
+        assertThat(html).containsPattern("\\bid=\"" + Pattern.quote(id) + "\"[^>]*>\\s*" + count + "\\s*<");
+    }
+
     private enum Actor {
         ADMIN("workflow.admin@example.com", Role.ADMIN),
         AUTHOR("workflow.author@example.com", Role.REQUESTER),
@@ -727,7 +851,8 @@ class RepairRequestWorkflowTest {
         return mvc.perform(get(path).session(login(actor))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
     }
 
-    private String csrf(Actor actor) throws Exception { return hidden(open(actor, "/"), "_csrf"); }
+    // Public login still renders the session token when a stale account may no longer read the Dashboard.
+    private String csrf(Actor actor) throws Exception { return hidden(open(actor, "/login"), "_csrf"); }
 
     private MockHttpServletRequestBuilder securedPost(Actor actor, String path) throws Exception {
         return post(path).session(login(actor)).param("_csrf", csrf(actor));
