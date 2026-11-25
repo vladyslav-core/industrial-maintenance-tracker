@@ -1,5 +1,7 @@
 package com.vladyslav.industrialmaintenancetracker.repairrequest;
 
+import com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestPreview;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Lock;
@@ -17,6 +19,51 @@ public interface RepairRequestRepository extends JpaRepository<RepairRequest, Lo
     boolean existsByEquipment_IdAndStatusIn(Long equipmentId, Collection<RepairRequestStatus> statuses);
 
     boolean existsByAssignedTechnician_IdAndStatusIn(Long technicianId, Collection<RepairRequestStatus> statuses);
+
+    long countByStatus(RepairRequestStatus status);
+
+    long countByPriorityAndStatusIn(RepairRequestPriority priority, Collection<RepairRequestStatus> statuses);
+
+    long countByAssignedTechnician_IdAndStatus(Long technicianId, RepairRequestStatus status);
+
+    @Query("""
+            SELECT new com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestPreview(
+                request.id, request.title, equipment.id, equipment.name,
+                request.status, request.priority, request.createdAt)
+            FROM RepairRequest request
+            JOIN request.equipment equipment
+            ORDER BY request.createdAt DESC, request.id DESC
+            """)
+    List<RepairRequestPreview> findLatestDashboardRequests(Pageable pageable);
+
+    @Query("""
+            SELECT new com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestPreview(
+                request.id, request.title, equipment.id, equipment.name,
+                request.status, request.priority, request.createdAt)
+            FROM RepairRequest request
+            JOIN request.equipment equipment
+            WHERE request.createdBy.id = :authorId
+            ORDER BY request.createdAt DESC, request.id DESC
+            """)
+    List<RepairRequestPreview> findLatestDashboardRequestsByAuthor(
+            @Param("authorId") Long authorId, Pageable pageable
+    );
+
+    @Query("""
+            SELECT new com.vladyslav.industrialmaintenancetracker.repairrequest.dto.RepairRequestPreview(
+                request.id, request.title, equipment.id, equipment.name,
+                request.status, request.priority, request.createdAt)
+            FROM RepairRequest request
+            JOIN request.equipment equipment
+            WHERE request.assignedTechnician.id = :technicianId
+              AND request.status = :status
+            ORDER BY request.createdAt DESC, request.id DESC
+            """)
+    List<RepairRequestPreview> findLatestDashboardAssignments(
+            @Param("technicianId") Long technicianId,
+            @Param("status") RepairRequestStatus status,
+            Pageable pageable
+    );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT request FROM RepairRequest request WHERE request.id = :id")

@@ -9,6 +9,7 @@ import com.vladyslav.industrialmaintenancetracker.repairrequest.RepairRequestSta
 import com.vladyslav.industrialmaintenancetracker.user.dto.UserCreateForm;
 import com.vladyslav.industrialmaintenancetracker.user.dto.UserListItem;
 import com.vladyslav.industrialmaintenancetracker.user.dto.UserEditForm;
+import com.vladyslav.industrialmaintenancetracker.user.dto.CurrentUserSummary;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -16,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 @Service
 public class UserService {
@@ -55,6 +57,16 @@ public class UserService {
         );
 
         return userRepository.save(user);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<CurrentUserSummary> findActiveCurrentUserSummary(Long userId) {
+        if (userId == null) {
+            return Optional.empty();
+        }
+        return userRepository.findById(userId)
+                .filter(User::isActive)
+                .map(user -> new CurrentUserSummary(user.getId(), user.getFullName(), user.getRole()));
     }
 
     @Transactional(readOnly = true)
